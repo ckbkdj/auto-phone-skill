@@ -1,0 +1,19 @@
+{
+  "auto_install_appium": true,
+  "confirm_all": false,
+  "max_steps": 40,
+  "devices": {
+    "cloud-1": {
+      "udid": "emulator-5554",
+      "appium_url": "http://127.0.0.1:4723",
+      "system_port": 8201,
+      "auto_start": true
+    }
+  },
+  "llm": {
+    "base_url": "",
+    "model": "",
+    "api_key_env": "AUTO_PHONE_LLM_API_KEY",
+    "max_output_tokens": 700
+  }
+}

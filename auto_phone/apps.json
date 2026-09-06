@@ -1,0 +1,603 @@
+{
+  "apps": [
+    {
+      "name": "美团",
+      "package": "com.sankuai.meituan",
+      "aliases": [
+        "美团APP",
+        "美团打车",
+        "美团团购"
+      ],
+      "category": "local_services"
+    },
+    {
+      "name": "美团外卖",
+      "package": "com.sankuai.meituan.takeoutnew",
+      "aliases": [
+        "美团外卖APP"
+      ],
+      "category": "food_delivery"
+    },
+    {
+      "name": "大众点评",
+      "package": "com.dianping.v1",
+      "aliases": [
+        "点评"
+      ],
+      "category": "local_services"
+    },
+    {
+      "name": "滴滴出行",
+      "package": "com.sdu.didi.psnger",
+      "aliases": [
+        "滴滴",
+        "滴滴打车"
+      ],
+      "category": "ride_hailing"
+    },
+    {
+      "name": "高德地图",
+      "package": "com.autonavi.minimap",
+      "aliases": [
+        "高德",
+        "高德打车",
+        "高德导航"
+      ],
+      "category": "maps"
+    },
+    {
+      "name": "百度地图",
+      "package": "com.baidu.BaiduMap",
+      "aliases": [
+        "百度导航"
+      ],
+      "category": "maps"
+    },
+    {
+      "name": "腾讯地图",
+      "package": "com.tencent.map",
+      "aliases": [
+        "腾讯导航"
+      ],
+      "category": "maps"
+    },
+    {
+      "name": "饿了么",
+      "package": "me.ele",
+      "aliases": [
+        "饿了么外卖"
+      ],
+      "category": "food_delivery"
+    },
+    {
+      "name": "淘宝",
+      "package": "com.taobao.taobao",
+      "aliases": [
+        "手机淘宝"
+      ],
+      "category": "shopping"
+    },
+    {
+      "name": "天猫",
+      "package": "com.tmall.wireless",
+      "aliases": [
+        "手机天猫"
+      ],
+      "category": "shopping"
+    },
+    {
+      "name": "京东",
+      "package": "com.jingdong.app.mall",
+      "aliases": [
+        "京东商城"
+      ],
+      "category": "shopping"
+    },
+    {
+      "name": "拼多多",
+      "package": "com.xunmeng.pinduoduo",
+      "aliases": [
+        "PDD"
+      ],
+      "category": "shopping"
+    },
+    {
+      "name": "闲鱼",
+      "package": "com.taobao.idlefish",
+      "aliases": [
+        "咸鱼"
+      ],
+      "category": "shopping"
+    },
+    {
+      "name": "微信",
+      "package": "com.tencent.mm",
+      "aliases": [
+        "WeChat",
+        "微 信"
+      ],
+      "category": "communication"
+    },
+    {
+      "name": "企业微信",
+      "package": "com.tencent.wework",
+      "aliases": [
+        "企微",
+        "WeCom"
+      ],
+      "category": "work"
+    },
+    {
+      "name": "QQ",
+      "package": "com.tencent.mobileqq",
+      "aliases": [
+        "手机QQ"
+      ],
+      "category": "communication"
+    },
+    {
+      "name": "支付宝",
+      "package": "com.eg.android.AlipayGphone",
+      "aliases": [
+        "Alipay"
+      ],
+      "category": "finance"
+    },
+    {
+      "name": "钉钉",
+      "package": "com.alibaba.android.rimet",
+      "aliases": [
+        "DingTalk"
+      ],
+      "category": "work"
+    },
+    {
+      "name": "飞书",
+      "package": "com.ss.android.lark",
+      "aliases": [
+        "Feishu",
+        "Lark"
+      ],
+      "category": "work"
+    },
+    {
+      "name": "抖音",
+      "package": "com.ss.android.ugc.aweme",
+      "aliases": [
+        "Douyin"
+      ],
+      "category": "video"
+    },
+    {
+      "name": "快手",
+      "package": "com.smile.gifmaker",
+      "aliases": [
+        "Kuaishou"
+      ],
+      "category": "video"
+    },
+    {
+      "name": "小红书",
+      "package": "com.xingin.xhs",
+      "aliases": [
+        "XHS",
+        "RED"
+      ],
+      "category": "social"
+    },
+    {
+      "name": "微博",
+      "package": "com.sina.weibo",
+      "aliases": [
+        "新浪微博"
+      ],
+      "category": "social"
+    },
+    {
+      "name": "哔哩哔哩",
+      "package": "tv.danmaku.bili",
+      "aliases": [
+        "B站",
+        "Bilibili"
+      ],
+      "category": "video"
+    },
+    {
+      "name": "知乎",
+      "package": "com.zhihu.android",
+      "aliases": [
+        "Zhihu"
+      ],
+      "category": "content"
+    },
+    {
+      "name": "豆瓣",
+      "package": "com.douban.frodo",
+      "aliases": [
+        "Douban"
+      ],
+      "category": "content"
+    },
+    {
+      "name": "今日头条",
+      "package": "com.ss.android.article.news",
+      "aliases": [
+        "头条"
+      ],
+      "category": "news"
+    },
+    {
+      "name": "百度",
+      "package": "com.baidu.searchbox",
+      "aliases": [
+        "百度APP"
+      ],
+      "category": "search"
+    },
+    {
+      "name": "夸克",
+      "package": "com.quark.browser",
+      "aliases": [
+        "夸克浏览器"
+      ],
+      "category": "browser"
+    },
+    {
+      "name": "UC浏览器",
+      "package": "com.UCMobile",
+      "aliases": [
+        "UC"
+      ],
+      "category": "browser"
+    },
+    {
+      "name": "QQ浏览器",
+      "package": "com.tencent.mtt",
+      "aliases": [
+        "腾讯浏览器"
+      ],
+      "category": "browser"
+    },
+    {
+      "name": "Chrome",
+      "package": "com.android.chrome",
+      "aliases": [
+        "谷歌浏览器",
+        "Google Chrome"
+      ],
+      "category": "browser"
+    },
+    {
+      "name": "网易云音乐",
+      "package": "com.netease.cloudmusic",
+      "aliases": [
+        "网易云"
+      ],
+      "category": "music"
+    },
+    {
+      "name": "QQ音乐",
+      "package": "com.tencent.qqmusic",
+      "aliases": [
+        "QQ Music"
+      ],
+      "category": "music"
+    },
+    {
+      "name": "酷狗音乐",
+      "package": "com.kugou.android",
+      "aliases": [
+        "酷狗"
+      ],
+      "category": "music"
+    },
+    {
+      "name": "喜马拉雅",
+      "package": "com.ximalaya.ting.android",
+      "aliases": [
+        "喜马拉雅FM"
+      ],
+      "category": "audio"
+    },
+    {
+      "name": "腾讯视频",
+      "package": "com.tencent.qqlive",
+      "aliases": [
+        "Tencent Video"
+      ],
+      "category": "video"
+    },
+    {
+      "name": "爱奇艺",
+      "package": "com.qiyi.video",
+      "aliases": [
+        "iQIYI"
+      ],
+      "category": "video"
+    },
+    {
+      "name": "优酷",
+      "package": "com.youku.phone",
+      "aliases": [
+        "Youku"
+      ],
+      "category": "video"
+    },
+    {
+      "name": "芒果TV",
+      "package": "com.hunantv.imgo.activity",
+      "aliases": [
+        "Mango TV"
+      ],
+      "category": "video"
+    },
+    {
+      "name": "携程旅行",
+      "package": "ctrip.android.view",
+      "aliases": [
+        "携程",
+        "Ctrip"
+      ],
+      "category": "travel"
+    },
+    {
+      "name": "去哪儿旅行",
+      "package": "com.Qunar",
+      "aliases": [
+        "去哪儿",
+        "Qunar"
+      ],
+      "category": "travel"
+    },
+    {
+      "name": "铁路12306",
+      "package": "com.MobileTicket",
+      "aliases": [
+        "12306"
+      ],
+      "category": "travel"
+    },
+    {
+      "name": "同程旅行",
+      "package": "com.tongcheng.android",
+      "aliases": [
+        "同程"
+      ],
+      "category": "travel"
+    },
+    {
+      "name": "Keep",
+      "package": "com.gotokeep.keep",
+      "aliases": [
+        "Keep运动"
+      ],
+      "category": "health"
+    },
+    {
+      "name": "WPS Office",
+      "package": "cn.wps.moffice_eng",
+      "aliases": [
+        "WPS",
+        "金山文档"
+      ],
+      "category": "productivity"
+    },
+    {
+      "name": "百度网盘",
+      "package": "com.baidu.netdisk",
+      "aliases": [
+        "百度云"
+      ],
+      "category": "cloud_storage"
+    },
+    {
+      "name": "阿里云盘",
+      "package": "com.alicloud.databox",
+      "aliases": [
+        "阿里网盘"
+      ],
+      "category": "cloud_storage"
+    },
+    {
+      "name": "讯飞输入法",
+      "package": "com.iflytek.inputmethod",
+      "aliases": [
+        "讯飞"
+      ],
+      "category": "input"
+    },
+    {
+      "name": "搜狗输入法",
+      "package": "com.sohu.inputmethod.sogou",
+      "aliases": [
+        "搜狗"
+      ],
+      "category": "input"
+    },
+    {
+      "name": "Telegram",
+      "package": "org.telegram.messenger",
+      "aliases": [
+        "电报"
+      ],
+      "category": "communication"
+    },
+    {
+      "name": "WhatsApp",
+      "package": "com.whatsapp",
+      "aliases": [
+        "WA"
+      ],
+      "category": "communication"
+    },
+    {
+      "name": "Instagram",
+      "package": "com.instagram.android",
+      "aliases": [
+        "IG"
+      ],
+      "category": "social"
+    },
+    {
+      "name": "Facebook",
+      "package": "com.facebook.katana",
+      "aliases": [
+        "脸书"
+      ],
+      "category": "social"
+    },
+    {
+      "name": "Messenger",
+      "package": "com.facebook.orca",
+      "aliases": [
+        "Facebook Messenger"
+      ],
+      "category": "communication"
+    },
+    {
+      "name": "X",
+      "package": "com.twitter.android",
+      "aliases": [
+        "Twitter",
+        "推特"
+      ],
+      "category": "social"
+    },
+    {
+      "name": "TikTok",
+      "package": "com.zhiliaoapp.musically",
+      "aliases": [
+        "国际抖音"
+      ],
+      "category": "video"
+    },
+    {
+      "name": "YouTube",
+      "package": "com.google.android.youtube",
+      "aliases": [
+        "油管"
+      ],
+      "category": "video"
+    },
+    {
+      "name": "Google Maps",
+      "package": "com.google.android.apps.maps",
+      "aliases": [
+        "谷歌地图"
+      ],
+      "category": "maps"
+    },
+    {
+      "name": "Gmail",
+      "package": "com.google.android.gm",
+      "aliases": [
+        "谷歌邮箱"
+      ],
+      "category": "email"
+    },
+    {
+      "name": "Outlook",
+      "package": "com.microsoft.office.outlook",
+      "aliases": [
+        "微软邮箱"
+      ],
+      "category": "email"
+    },
+    {
+      "name": "Microsoft Teams",
+      "package": "com.microsoft.teams",
+      "aliases": [
+        "Teams"
+      ],
+      "category": "work"
+    },
+    {
+      "name": "Slack",
+      "package": "com.Slack",
+      "aliases": [
+        "Slack工作台"
+      ],
+      "category": "work"
+    },
+    {
+      "name": "Discord",
+      "package": "com.discord",
+      "aliases": [
+        "Discord聊天"
+      ],
+      "category": "communication"
+    },
+    {
+      "name": "Reddit",
+      "package": "com.reddit.frontpage",
+      "aliases": [
+        "红迪"
+      ],
+      "category": "social"
+    },
+    {
+      "name": "Spotify",
+      "package": "com.spotify.music",
+      "aliases": [
+        "声田"
+      ],
+      "category": "music"
+    },
+    {
+      "name": "Netflix",
+      "package": "com.netflix.mediaclient",
+      "aliases": [
+        "网飞"
+      ],
+      "category": "video"
+    },
+    {
+      "name": "Amazon",
+      "package": "com.amazon.mShop.android.shopping",
+      "aliases": [
+        "亚马逊购物"
+      ],
+      "category": "shopping"
+    },
+    {
+      "name": "Uber",
+      "package": "com.ubercab",
+      "aliases": [
+        "优步"
+      ],
+      "category": "ride_hailing"
+    },
+    {
+      "name": "Uber Eats",
+      "package": "com.ubercab.eats",
+      "aliases": [
+        "Uber外卖"
+      ],
+      "category": "food_delivery"
+    },
+    {
+      "name": "Lyft",
+      "package": "me.lyft.android",
+      "aliases": [
+        "Lyft打车"
+      ],
+      "category": "ride_hailing"
+    },
+    {
+      "name": "DoorDash",
+      "package": "com.dd.doordash",
+      "aliases": [
+        "Door Dash"
+      ],
+      "category": "food_delivery"
+    },
+    {
+      "name": "系统设置",
+      "package": "com.android.settings",
+      "aliases": [
+        "设置",
+        "Settings"
+      ]
+    }
+  ]
+}

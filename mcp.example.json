@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "auto-phone-skill": {
+      "command": "python3",
+      "args": ["/absolute/path/auto-phone-skill/scripts/phone_agent.py", "mcp"]
+    }
+  }
+}
