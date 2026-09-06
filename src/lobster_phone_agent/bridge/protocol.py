@@ -24,6 +24,7 @@ class BridgeMessageType(StrEnum):
 
 ALLOWED_RPC_METHODS = frozenset(
     {
+        "atomic_action",
         "snapshot",
         "launch_app",
         "tap",
