@@ -40,15 +40,21 @@ class StepwiseExecutor:
                 snapshot = await self._observe(device)
                 receipts.append({"action": "handoff", "outcome": "returned_from_user"})
                 continue
+            decision_started = perf_counter()
             decision = await self.planner.choose(
                 request=request, snapshot=snapshot, observation_id=observation_id,
                 installed_apps=installed_apps, recent_receipts=list(receipts),
             )
+            decision_ms = (perf_counter() - decision_started) * 1000
             # Revalidate even local/custom planner instances: the executor is a trust boundary.
             decision = NextAction.model_validate(decision.model_dump(mode="json"))
             if decision.observation_id != observation_id:
                 raise ExecutionError("decision belongs to a different observation")
             step, selected = self._compile(decision, snapshot, turn)
+            if selected is not None and any(x in snapshot.package.lower() for x in ("permissioncontroller", "packageinstaller")):
+                await hooks.handoff("system_permission", "请在手机上确认系统权限请求")
+                snapshot = await self._observe(device)
+                continue
             risk = self.risk.assess(step, request.policy)
             step.risk = risk.risk
             await on_decision(ActionPlan(
@@ -96,7 +102,7 @@ class StepwiseExecutor:
                 raise ExecutionError("no-progress wait loop was blocked")
             operation_id = hashlib.sha256(f"{nonce}:{turn}".encode()).hexdigest()
             trace = StepTrace(step_id=step.id, action=step.action, started_at=utc_now(), attempts=1)
-            await hooks.emit(EventType.STEP_STARTED, step.description, {"round": turn, "step_id": step.id})
+            await hooks.emit(EventType.STEP_STARTED, step.description, {"round": turn, "step_id": step.id, "operation_id": operation_id, "decision_ms": decision_ms})
             started = perf_counter()
             try:
                 await self._dispatch(decision, selected, snapshot, device, operation_id)
@@ -182,11 +188,28 @@ class StepwiseExecutor:
                       and ((selected.resource_id and n.resource_id == selected.resource_id)
                            or (not selected.resource_id and n.path == selected.path))]
         from lobster_phone_agent.util.text import normalize_text
-        if len(candidates) != 1 or candidates[0].text != normalize_text(expected):
+        if len(candidates) != 1 or candidates[0].text != expected:
             raise ConditionTimeout("input value was not verified on the selected field")
 
     @staticmethod
     async def _dispatch(d, node, snapshot, device, operation_id):
+        if hasattr(device, "perform_observed") and d.action != "wait":
+            params = {"operation_id": operation_id}
+            method = d.action
+            if d.action == "launch_app":
+                params["package"] = d.app_package
+            elif d.action == "tap":
+                params["x"], params["y"] = node.bounds.clamped_center(snapshot.width, snapshot.height)
+            elif d.action == "type":
+                method = "type_text"
+                params.update(text=d.text, clear=True, element=node.interaction_payload())
+            elif d.action == "clear":
+                method = "clear_active"
+                params["element"] = node.interaction_payload()
+            elif d.action == "swipe":
+                params["direction"] = d.direction
+            await device.perform_observed(method, params, snapshot.fingerprint)
+            return
         if d.action == "launch_app":
             await device.launch_app(d.app_package, operation_id=operation_id)
         elif d.action == "tap":
