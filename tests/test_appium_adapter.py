@@ -68,6 +68,9 @@ class FakeDriver:
     def find_element(self, _by: str, _value: str):
         return self.element
 
+    def find_elements(self, _by: str, _value: str):
+        return [self.element]
+
     def get_window_size(self) -> dict[str, int]:
         return {"width": 1080, "height": 2400}
 
@@ -254,3 +257,48 @@ async def test_launch_accepts_running_app_behind_permission_controller() -> None
     device = AppiumDevice(descriptor(), driver, SkillRuntimeConfig())
     await device.launch_app("com.example")
     assert driver.activated_package == "com.example"
+
+
+@pytest.mark.asyncio
+async def test_timeout_does_not_release_lock_or_allow_late_double_action():
+    import threading
+    import asyncio
+    started, release = threading.Event(), threading.Event()
+    driver = FakeDriver()
+    device = AppiumDevice(descriptor(), driver, SkillRuntimeConfig())
+    def slow():
+        started.set()
+        release.wait(2)
+        return True
+    try:
+        with pytest.raises(ExecutionError, match="outcome unknown"):
+            await device._run(slow, timeout=0.03)
+        assert started.is_set() and device.outcome_uncertain
+        assert device._command_lock.locked()
+        with pytest.raises(ExecutionError, match="quarantined"):
+            await device.tap(1, 2)
+        assert driver.scripts == []
+    finally:
+        release.set()
+        await asyncio.gather(*device._inflight, return_exceptions=True)
+    assert not device._command_lock.locked()
+    assert device.outcome_uncertain
+
+
+@pytest.mark.asyncio
+async def test_stale_named_input_does_not_fall_back_to_active_field():
+    driver = FakeDriver()
+    driver.find_elements = lambda *_: []
+    device = AppiumDevice(descriptor(), driver, SkillRuntimeConfig())
+    with pytest.raises(ExecutionError, match="no longer resolves uniquely"):
+        await device.type_text("private-content", clear=True, element={"resource_id": "missing"})
+    assert driver.element.text == ""
+
+
+@pytest.mark.asyncio
+async def test_duplicate_native_locators_are_rejected():
+    driver = FakeDriver()
+    driver.find_elements = lambda *_: [driver.element, FakeElement()]
+    device = AppiumDevice(descriptor(), driver, SkillRuntimeConfig())
+    with pytest.raises(ExecutionError, match="no longer resolves uniquely"):
+        await device.clear_active(element={"resource_id": "shared-id"})
