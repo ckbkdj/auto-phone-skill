@@ -16,13 +16,21 @@ class RemoteDevice:
         self.device_id = descriptor.id
         self._hub = hub
 
-    async def _call(self, method: str, **params: Any) -> Any:
+    async def _call(self, rpc_method: str, **params: Any) -> Any:
         return await self._hub.call(
             bridge_id=self.descriptor.bridge_id,
             device_id=self.descriptor.id,
-            method=method,
+            method=rpc_method,
             params=params,
         )
+
+    async def perform_observed(self, method: str, params: dict[str, Any], fingerprint: str) -> None:
+        from lobster_phone_agent.bridge.contracts import GuardedResult
+        from lobster_phone_agent.errors import ExecutionError
+        result = GuardedResult.model_validate(await self._call(
+            "guarded_action", method=method, params=params, fingerprint=fingerprint))
+        if result.state != "executed":
+            raise ExecutionError(f"guarded action {result.state}: {result.code}; no automatic retry")
 
     async def snapshot(self) -> ScreenSnapshot:
         payload = await self._call("snapshot")
