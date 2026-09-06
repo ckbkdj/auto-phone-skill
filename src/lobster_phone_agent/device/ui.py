@@ -131,7 +131,7 @@ class UiNode:
             )
         ) or "-"
         bounds = self.bounds.as_tuple() if self.bounds else "-"
-        text = "<password>" if self.password and self.text else redact_text(self.text, 80)
+        text = "<password>" if self.password else redact_text(self.text, 80)
         desc = redact_text(self.content_desc, 80)
         rid = self.resource_id[-90:]
         return (
@@ -307,6 +307,8 @@ def parse_uiautomator_xml(
     activity: str = "",
     window_size: tuple[int, int] | None = None,
 ) -> ScreenSnapshot:
+    if len(xml.encode("utf-8")) > 2_000_000 or "<!DOCTYPE" in xml or "<!ENTITY" in xml:
+        raise ValueError("untrusted or oversized UI XML")
     cleaned = _INVALID_XML.sub("", xml)
     if not cleaned.strip():
         raise ValueError("empty UI hierarchy")
@@ -314,6 +316,8 @@ def parse_uiautomator_xml(
     nodes: list[UiNode] = []
 
     def walk(element: ET.Element, depth: int, path: str) -> None:
+        if depth > 128 or len(nodes) >= 3000:
+            raise ValueError("UI tree depth or node limit exceeded")
         attrs = element.attrib
         node_bounds = parse_bounds(_attr(attrs, "bounds", "rect"))
         if element.tag == "node" or any(
@@ -333,10 +337,8 @@ def parse_uiautomator_xml(
                     index=len(nodes),
                     class_name=_attr(attrs, "class", "className", default=element.tag),
                     package=_attr(attrs, "package", default=package),
-                    text=normalize_text(_attr(attrs, "text")),
-                    content_desc=normalize_text(
-                        _attr(attrs, "content-desc", "contentDescription", "name")
-                    ),
+                    text="" if _as_bool(_attr(attrs, "password")) else _attr(attrs, "text"),
+                    content_desc="" if _as_bool(_attr(attrs, "password")) else _attr(attrs, "content-desc", "contentDescription", "name"),
                     resource_id=_attr(attrs, "resource-id", "resourceId"),
                     bounds=node_bounds,
                     clickable=_as_bool(_attr(attrs, "clickable")),
@@ -365,31 +367,13 @@ def parse_uiautomator_xml(
 
     resolved_package = package or next((node.package for node in nodes if node.package), "")
     xml_hash = hashlib.sha256(cleaned.encode("utf-8")).hexdigest()[:16]
-    meaningful = sorted(
-        {
-            "|".join(
-                (
-                    node.resource_id,
-                    compact_text(node.text),
-                    compact_text(node.content_desc),
-                    node.role,
-                    str(node.bounds.as_tuple() if node.bounds else ""),
-                    "1" if node.clickable else "0",
-                    "1" if node.focused else "0",
-                    "1" if node.checked else "0",
-                    "1" if node.selected else "0",
-                )
-            )
-            for node in nodes
-            if node.displayed
-            and (node.resource_id or node.text or node.content_desc or node.clickable)
-        }
-    )
-    fingerprint_raw = (
-        f"{resolved_package}|{activity}|{width}x{height}|"
-        + "\n".join(meaningful[:300])
-    )
-    fingerprint = hashlib.sha256(fingerprint_raw.encode("utf-8")).hexdigest()[:16]
+    import json
+    fingerprint_raw = json.dumps({
+        "package": resolved_package, "activity": activity, "size": [width, height],
+        "nodes": [{**asdict(node), "bounds": node.bounds.as_tuple() if node.bounds else None}
+                  for node in nodes],
+    }, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    fingerprint = hashlib.sha256(fingerprint_raw.encode("utf-8")).hexdigest()[:32]
     return ScreenSnapshot(
         package=resolved_package,
         activity=activity,
