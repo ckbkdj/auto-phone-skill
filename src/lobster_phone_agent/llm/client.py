@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import httpx
@@ -53,14 +54,14 @@ class OpenAICompatibleClient:
         }
 
         try:
-            response = await self._client.post("chat/completions", json=payload)
+            response = await self._post_bounded(payload)
             if response.status_code in {400, 422} and any(
                 marker in response.text.lower()
                 for marker in ("json_schema", "response_format", "structured output")
             ):
                 # Transport downgrade never disables local schema/semantic validation.
                 payload["response_format"] = {"type": "json_object"}
-                response = await self._client.post("chat/completions", json=payload)
+                response = await self._post_bounded(payload)
             response.raise_for_status()
         except httpx.HTTPError as exc:
             raise PlanningError(f"LLM request failed: {type(exc).__name__}") from exc
@@ -84,6 +85,20 @@ class OpenAICompatibleClient:
             return result
         except (KeyError, IndexError, TypeError, ValueError, JsonSchemaError) as exc:
             raise PlanningError("LLM returned an invalid JSON response or output contract") from exc
+
+    async def _post_bounded(self, payload: dict[str, Any]) -> httpx.Response:
+        try:
+            async with asyncio.timeout(self.settings.llm_timeout_seconds):
+                async with self._client.stream("POST", "chat/completions", json=payload) as response:
+                    body = bytearray()
+                    async for chunk in response.aiter_bytes():
+                        body.extend(chunk)
+                        if len(body) > 2_000_000:
+                            raise PlanningError("LLM response exceeds byte limit")
+                    return httpx.Response(response.status_code, headers=response.headers,
+                                          content=bytes(body), request=response.request)
+        except TimeoutError as exc:
+            raise PlanningError("LLM response deadline exceeded") from exc
 
     async def close(self) -> None:
         await self._client.aclose()
