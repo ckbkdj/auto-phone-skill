@@ -29,6 +29,10 @@ def write_json(path: Path, payload: object) -> None:
 def main() -> None:
     output = Path("contracts")
     output.mkdir(exist_ok=True)
+    from lobster_phone_agent.stepwise.models import Decision, AtomicRequest, AtomicResult
+    write_json(output / "next-decision.schema.json", Decision.model_json_schema())
+    write_json(output / "atomic-request.schema.json", AtomicRequest.model_json_schema())
+    write_json(output / "atomic-result.schema.json", AtomicResult.model_json_schema())
     write_json(output / "action-plan.schema.json", ActionPlan.model_json_schema())
     write_json(output / "task-request.schema.json", TaskRequest.model_json_schema())
     write_json(output / "local-task-request.schema.json", LocalTaskRequest.model_json_schema())
