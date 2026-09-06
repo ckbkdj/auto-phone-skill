@@ -4,7 +4,7 @@
 
 ## 已实际执行
 
-执行环境 Linux、Python 3.13.5。`python -m unittest discover -s tests -v`：**55 项测试通过**。失败数 0、错误数 0。测试包含多个参数子用例，55 是 unittest 报告的测试方法数，不是伪造的 App 覆盖数。
+执行环境 Linux、Python 3.13.5。`python -m unittest discover -s tests -v`：**59 项测试通过**。失败数 0、错误数 0。测试包含多个参数子用例，59 是 unittest 报告的测试方法数，不是伪造的 App 覆盖数。
 
 - 严格 JSON 与动作 Schema：重复键、未知字段、非法类型、超限结构、多动作列表和模型输出拒绝。
 - 本轮 observation_id / 页面指纹绑定、唯一元素匹配、同页面同动作阻止、确认令牌与人工接管。
@@ -15,6 +15,12 @@
 - 自动启动 Appium 的参数、安全绑定和缺少依赖错误分支通过模拟子进程测试；未实际联网下载 Appium。
 
 另外执行 Python 编译检查、生成 ZIP、ZIP 完整性检查、解压目录的独立入口检查和同一套测试。
+
+## ZIP 安装复验补充
+
+在仓库主线便携实现上保留原 55 项测试，新增 4 项发行检查：根目录 `install.py` 在其他工作目录且禁用 site-packages 时安装；打包白名单拒绝额外私人 JSON/备份/脚本；相同源码两次打包字节一致；从实际 ZIP 解压运行 doctor；缺少必要源文件时拒绝打包（部分检查属于同一测试方法）。总计 59 个测试方法全部通过，无跳过。
+
+本地再次执行 `python -m unittest discover -s tests -v`，结果为 `Ran 59 tests ... OK`。Python 运行时仍无第三方依赖；独立 JSON Schema 校验器仅用于测试。ZIP 中不包含原 Docker 部署栈。
 
 ## 尚未执行，不作完成声明
 
