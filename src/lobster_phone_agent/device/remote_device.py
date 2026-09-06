@@ -24,6 +24,9 @@ class RemoteDevice:
             params=params,
         )
 
+    async def atomic_action(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return await self._call("atomic_action", **payload)
+
     async def snapshot(self) -> ScreenSnapshot:
         payload = await self._call("snapshot")
         if not isinstance(payload, dict):
