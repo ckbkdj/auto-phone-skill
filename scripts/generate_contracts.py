@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 from lobster_phone_agent.app import create_app
+from lobster_phone_agent.llm.next_action import NextAction
 from lobster_phone_agent.config import Settings
 from lobster_phone_agent.schemas import (
     ActionPlan,
@@ -29,6 +30,7 @@ def write_json(path: Path, payload: object) -> None:
 def main() -> None:
     output = Path("contracts")
     output.mkdir(exist_ok=True)
+    write_json(output / "next-action.schema.json", NextAction.model_json_schema())
     write_json(output / "action-plan.schema.json", ActionPlan.model_json_schema())
     write_json(output / "task-request.schema.json", TaskRequest.model_json_schema())
     write_json(output / "local-task-request.schema.json", LocalTaskRequest.model_json_schema())

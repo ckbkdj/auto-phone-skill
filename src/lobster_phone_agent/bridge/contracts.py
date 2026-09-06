@@ -169,7 +169,7 @@ def validate_rpc_result(method: str, payload: Any) -> Any:
         raise BridgeProtocolError("RPC result method is not allowlisted")
     try:
         validated = adapter.validate_python(payload)
-        result = adapter.dump_python(validated, mode="json", exclude_none=True)
+        result = adapter.dump_python(validated, mode="json", exclude_none=method != "snapshot")
         if method == "screenshot_png":
             raw = base64.b64decode(result, validate=True)
             if not raw.startswith(b"\x89PNG\r\n\x1a\n"):

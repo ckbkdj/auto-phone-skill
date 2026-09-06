@@ -100,9 +100,9 @@ def _execute_open_app(client: TestClient, websocket, *, performed: bool) -> dict
     thread = threading.Thread(target=request_task, daemon=True)
     thread.start()
     foreground = "com.android.launcher"
-    # Success: initial snapshot, list apps, pre-action snapshot, launch, two stable snapshots.
-    # Failure: initial snapshot, list apps, then two pre-action snapshot/launch attempts.
-    for _ in range(6):
+    # Success includes an additional fresh observation before certifying finish.
+    # A negative mutation receipt stops after the first launch; no blind retry.
+    for _ in range(7 if performed else 4):
         request = websocket.receive_json()
         assert request["type"] == "rpc_request"
         method = request["method"]
@@ -146,7 +146,7 @@ def test_performed_false_never_becomes_false_success(tmp_path: Path) -> None:
             websocket.receive_json()
             result = _execute_open_app(client, websocket, performed=False)
             assert result["status"] == "failed"
-            assert "did not perform launch_app" in result["error"]
+            assert "outcome unverified" in result["error"]
 
 
 class FalseHub:

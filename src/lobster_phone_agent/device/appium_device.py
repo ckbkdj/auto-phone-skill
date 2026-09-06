@@ -40,6 +40,8 @@ class AppiumDevice:
         self._driver = driver
         self._settings = settings
         self._command_lock = asyncio.Lock()
+        self.outcome_uncertain = False
+        self._inflight: set[asyncio.Task] = set()
 
     @staticmethod
     def build_capabilities(
@@ -125,15 +127,33 @@ class AppiumDevice:
             raise ExecutionError(f"failed to configure Appium session settings: {exc}") from exc
 
     async def _run(self, callback, *, timeout: float | None = None):
+        if self.outcome_uncertain:
+            raise ExecutionError("device quarantined after an uncertain command; reconcile manually")
         command_timeout = timeout or self._settings.appium_command_timeout_seconds
-        async with self._command_lock:
-            try:
-                return await asyncio.wait_for(
-                    asyncio.to_thread(callback),
-                    timeout=command_timeout,
-                )
-            except TimeoutError as exc:
-                raise ExecutionError("Appium command timed out") from exc
+
+        async def locked_command():
+            # Cancelling wait_for cannot stop a WebDriver command already running in a thread.
+            # Keep the lock until the real call finishes, even if its caller has timed out.
+            async with self._command_lock:
+                if self.outcome_uncertain:
+                    raise ExecutionError("device quarantined; no subsequent command permitted")
+                return await asyncio.to_thread(callback)
+
+        task = asyncio.create_task(locked_command())
+        self._inflight.add(task)
+        def done(finished):
+            self._inflight.discard(finished)
+            if not finished.cancelled():
+                finished.exception()  # Observe late failures without leaking callback details.
+        task.add_done_callback(done)
+        try:
+            return await asyncio.wait_for(asyncio.shield(task), timeout=command_timeout)
+        except TimeoutError as exc:
+            self.outcome_uncertain = True
+            raise ExecutionError("Appium command timed out; device quarantined, outcome unknown") from exc
+        except asyncio.CancelledError:
+            self.outcome_uncertain = True
+            raise
 
     async def snapshot(self) -> ScreenSnapshot:
         def _capture() -> tuple[str, str, str, tuple[int, int]]:
@@ -249,28 +269,35 @@ class AppiumDevice:
     def _find_element_sync(self, element: dict[str, Any] | None) -> Any | None:
         if not element:
             return None
-        try:
-            from appium.webdriver.common.appiumby import AppiumBy
-        except ModuleNotFoundError:
-            return None
-        locators: list[tuple[str, str]] = []
-        resource_id = str(element.get("resource_id") or "")
-        accessibility_id = str(element.get("accessibility_id") or "")
-        text = str(element.get("text") or "")
-        if resource_id:
-            locators.append((AppiumBy.ID, resource_id))
-        if accessibility_id:
-            locators.append((AppiumBy.ACCESSIBILITY_ID, accessibility_id))
-        if text:
-            escaped = text.replace("\\", "\\\\").replace('"', '\\"')
-            locators.append(
-                (AppiumBy.ANDROID_UIAUTOMATOR, f'new UiSelector().text("{escaped}")')
-            )
+        # Native WebDriver locator strategies only; the model cannot supply locator code.
+        locators = []
+        if element.get("resource_id"):
+            locators.append(("id", element["resource_id"]))
+        if element.get("accessibility_id"):
+            locators.append(("accessibility id", element["accessibility_id"]))
+        if element.get("class_name"):
+            locators.append(("class name", element["class_name"]))
+        expected_bounds = element.get("bounds")
         for by, value in locators:
             try:
-                return self._driver.find_element(by, value)
+                candidates = self._driver.find_elements(by, value)
             except Exception:
                 continue
+            matched = []
+            for candidate in candidates:
+                try:
+                    if str(candidate.get_attribute("password")).lower() == "true":
+                        continue
+                    if expected_bounds:
+                        rect = candidate.rect
+                        actual = (rect["x"], rect["y"], rect["x"] + rect["width"], rect["y"] + rect["height"])
+                        if any(abs(a - b) > 3 for a, b in zip(actual, expected_bounds)):
+                            continue
+                    matched.append(candidate)
+                except Exception:
+                    continue
+            if len(matched) == 1:
+                return matched[0]
         return None
 
     async def type_text(
@@ -286,7 +313,11 @@ class AppiumDevice:
         def _type() -> None:
             target = self._find_element_sync(element)
             if target is None:
+                if element is not None:
+                    raise ExecutionError("selected input no longer resolves uniquely")
                 target = self._driver.switch_to.active_element
+            if str(target.get_attribute("password")).lower() == "true":
+                raise ExecutionError("password field requires human handoff")
             try:
                 target.click()
             except Exception:
@@ -395,7 +426,13 @@ class AppiumDevice:
         del operation_id
 
         def _clear() -> None:
-            target = self._find_element_sync(element) or self._driver.switch_to.active_element
+            target = self._find_element_sync(element)
+            if target is None:
+                if element is not None:
+                    raise ExecutionError("selected input no longer resolves uniquely")
+                target = self._driver.switch_to.active_element
+            if str(target.get_attribute("password")).lower() == "true":
+                raise ExecutionError("password field requires human handoff")
             target.clear()
             if not self._element_empty(target, allow_unreadable=True):
                 raise ExecutionError("clear command was not verified")

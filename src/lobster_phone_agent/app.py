@@ -7,7 +7,8 @@ from fastapi import FastAPI, WebSocket, status
 from lobster_phone_agent import __version__
 from lobster_phone_agent.agent.conditions import ConditionEvaluator
 from lobster_phone_agent.agent.dialogs import CommonDialogHandler
-from lobster_phone_agent.agent.executor import ActionExecutor
+from lobster_phone_agent.agent.stepwise import StepwiseExecutor
+from lobster_phone_agent.llm.next_action import NextActionPlanner
 from lobster_phone_agent.agent.risk import RiskEngine
 from lobster_phone_agent.agent.service import TaskService
 from lobster_phone_agent.agent.store import InMemoryTaskStore
@@ -43,14 +44,13 @@ def build_service(
     pool = DeviceSessionPool(hub)
     store = InMemoryTaskStore()
     vision_grounder = VisionGrounder(settings)
-    executor = ActionExecutor(
+    executor = StepwiseExecutor(
         settings=settings,
+        planner=NextActionPlanner(settings, registry, llm),
         matcher=matcher,
         conditions=conditions,
         dialogs=dialogs,
         risk=RiskEngine(),
-        planner=planner,
-        vision_grounder=vision_grounder,
     )
     service = TaskService(
         settings=settings,

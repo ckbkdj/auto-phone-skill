@@ -38,6 +38,8 @@ class LocalAppiumPool:
         if runtime is None:
             raise ExecutionError(f"private skill has no device {device_id!r}")
         async with runtime.lock:
+            if runtime.device is not None and getattr(runtime.device, "outcome_uncertain", False):
+                raise ExecutionError("device quarantined after an uncertain command; manual reconciliation required")
             if runtime.device is None or not await runtime.device.is_alive():
                 if runtime.device is not None:
                     await runtime.device.close()
@@ -51,7 +53,7 @@ class LocalAppiumPool:
         async with self._guard:
             now = monotonic()
             for runtime in self._runtimes.values():
-                if runtime.lock.locked() or runtime.device is None:
+                if runtime.lock.locked() or runtime.device is None or getattr(runtime.device, "outcome_uncertain", False):
                     continue
                 if now - runtime.last_used >= self.settings.appium_session_ttl_seconds:
                     expired.append(runtime.device)

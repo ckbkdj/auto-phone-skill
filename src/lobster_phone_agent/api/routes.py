@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Path as ApiPath, Query, Request, status
 from lobster_phone_agent.api.sse import EventSourceResponse
 
 from lobster_phone_agent import __version__
+from lobster_phone_agent.llm.next_action import NextAction
 from lobster_phone_agent.api.contracts import ERROR_RESPONSES
 from lobster_phone_agent.agent.service import TaskService
 from lobster_phone_agent.apps.registry import AppRegistry
@@ -149,6 +150,10 @@ def create_router(
     @router.get("/v1/contracts/action-plan", dependencies=protected)
     async def action_plan_schema() -> dict[str, object]:
         return ActionPlan.model_json_schema()
+
+    @router.get("/v1/contracts/next-action", dependencies=protected)
+    async def next_action_schema() -> dict[str, object]:
+        return NextAction.model_json_schema()
 
     return router
 
