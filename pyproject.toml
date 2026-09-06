@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lobster-phone-agent"
-version = "0.3.0rc1"
+version = "0.3.0rc2"
 description = "Split control-plane and private skill bridge for semantic Android automation"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -46,7 +46,7 @@ dev = [
   "ruff>=0.12,<1.0",
   "build>=1.2,<2.0",
   "setuptools>=77",
-  "wheel",
+  "wheel>=0.45",
 ]
 
 [project.scripts]
