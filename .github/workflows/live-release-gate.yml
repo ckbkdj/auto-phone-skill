@@ -1,0 +1,29 @@
+name: Private phone acceptance
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  acceptance:
+    runs-on: [self-hosted, linux, lobster-phone-live]
+    environment: phone-agent-release
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -e '.[dev,skill]'
+      - name: Docker and selected real phone smoke test
+        env:
+          PHONE_SKILL_URL: ${{ vars.PHONE_SKILL_URL }}
+          PHONE_SKILL_DEVICE_ID: ${{ vars.PHONE_SKILL_DEVICE_ID }}
+          PHONE_SKILL_TOKEN: ${{ secrets.PHONE_SKILL_TOKEN }}
+          PHONE_AGENT_LIVE_INSTRUCTION: '打开系统设置'
+          PHONE_AGENT_LIVE_APP_PACKAGE: 'com.android.settings'
+        run: python scripts/release_gate.py --release
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: private-phone-acceptance
+          path: artifacts/release-gate.json
+          retention-days: 7
