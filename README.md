@@ -9,14 +9,16 @@
 从 GitHub 的 **Code → Download ZIP** 下载，解压后：
 
 ```bash
-python3 scripts/phone_agent.py install
+python3 install.py
 ```
 
 Windows 可双击 `install.cmd`，或使用：
 
 ```powershell
-py -3 scripts\phone_agent.py install
+py -3 install.py
 ```
+
+根目录 `install.py` 只是规范安装入口 `scripts/phone_agent.py install` 的别名，不会启动另一套运行时。
 
 默认复制到 `~/.openclaw/skills/auto-phone-skill/`，让共享此目录的本机 Agent 使用。支持 `install --skills-dir /你的/skills目录`。安装器不会覆盖已有同名目录；更新时先保留旧目录再安装。配置和任务状态在独立的 `~/.auto-phone-skill/`，更新 ZIP 不会覆盖它们。
 
