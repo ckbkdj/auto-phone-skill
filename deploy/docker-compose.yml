@@ -3,7 +3,7 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile
-    image: lobster-phone-agent-control-plane:0.2.0rc2
+    image: lobster-phone-agent-control-plane:0.3.0rc1
     container_name: lobster-phone-agent-control-plane
     restart: unless-stopped
     env_file:
