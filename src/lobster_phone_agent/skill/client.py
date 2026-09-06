@@ -121,6 +121,8 @@ class SkillBridgeClient:
             return
         started = perf_counter()
         try:
+            if request.method not in {"guarded_action", "snapshot", "list_apps", "screenshot_png", "is_alive", "close"}:
+                raise ValueError("unbound mutation RPC is disabled")
             result = await asyncio.wait_for(
                 self.dispatcher.dispatch(request.device_id, request.method, request.params),
                 timeout=request.timeout_ms / 1000,
