@@ -1,0 +1,56 @@
+id: amap_navigation
+description: Start navigation in Amap after destination selection.
+priority: 90
+patterns:
+  - '^(?:请)?(?:帮我)?(?:用|打开)?高德(?:地图|导航)?(?:去|到|导航到)(?P<destination>.+)$'
+  - '^(?:请)?(?:帮我)?导航(?:去|到)(?P<destination>.+)$'
+target_app: 高德地图
+target_package: com.autonavi.minimap
+metadata:
+  category: navigation
+steps:
+  - id: launch_amap
+    action: launch_app
+    value: 高德地图
+    description: 打开高德地图
+    timeout_ms: 5000
+  - id: tap_search
+    action: tap
+    description: 打开搜索框
+    target:
+      text: 搜地点
+      aliases: [搜索地点, 搜索, 你想去哪儿, 输入目的地]
+      role: input
+    timeout_ms: 3500
+  - id: type_destination
+    action: type
+    target:
+      text: 搜地点
+      aliases: [搜索地点, 搜索, 你想去哪儿, 输入目的地]
+      role: input
+    value: '{destination}'
+    metadata:
+      clear_first: true
+    timeout_ms: 3500
+  - id: choose_destination
+    action: tap
+    target:
+      text: '{destination}'
+      aliases: ['{destination}']
+      allow_partial: true
+      index: 0
+    timeout_ms: 5000
+  - id: start_navigation
+    action: tap
+    target:
+      text: 导航
+      aliases: [开始导航, 路线, 去这里]
+      role: button
+      allow_partial: true
+    risk: medium
+    timeout_ms: 5000
+  - id: finish
+    action: finish
+    value:
+      destination: '{destination}'
+      app: 高德地图
