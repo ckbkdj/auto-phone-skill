@@ -30,6 +30,7 @@ class SkillRpcDispatcher:
 
     def __init__(self, pool: LocalAppiumPool) -> None:
         self.pool = pool
+        self._guarded = None
         self._operation_results: OrderedDict[
             tuple[str, str, str], tuple[str, Any]
         ] = OrderedDict()
@@ -42,6 +43,13 @@ class SkillRpcDispatcher:
         if method not in ALLOWED_RPC_METHODS:
             raise BridgeProtocolError(f"RPC method is not allowlisted: {method}")
         params = validate_rpc_params(method, params)
+
+        if method == "guarded_action":
+            from lobster_phone_agent.skill.guarded import GuardedDispatcher
+            from lobster_phone_agent.skill.journal import OperationJournal
+            if self._guarded is None:
+                self._guarded = GuardedDispatcher(self.pool, OperationJournal(self.pool.settings.operation_journal_path))
+            return await self._guarded.dispatch(device_id, params)
 
         operation_id = str(params.get("operation_id") or "")
         if method not in _MUTATING_METHODS:
