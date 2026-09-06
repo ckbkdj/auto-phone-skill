@@ -38,6 +38,8 @@ _FORBIDDEN_LOBSTER_FIELDS = {
 
 class ControlPlaneClient:
     def __init__(self, config: SkillConfig) -> None:
+        self._bridge_id = config.bridge_id
+        self._device_ids = {d.id for d in config.devices}
         self._client = httpx.AsyncClient(
             base_url=config.server_url,
             headers={"Authorization": f"Bearer {config.api_token}"},
@@ -56,10 +58,20 @@ class ControlPlaneClient:
         json: Any = None,
         timeout: httpx.Timeout | float | None = None,
     ) -> Any:
+        if method == "POST" and path.startswith("/v1/tasks/"):
+            # Read and verify ownership BEFORE forwarding confirm/resume/cancel.
+            await self.request("GET", path.rsplit("/", 1)[0])
         try:
-            response = await self._client.request(
-                method, path, json=json, timeout=timeout
-            )
+            kwargs = {"json": json}
+            if timeout is not None:
+                kwargs["timeout"] = timeout
+            async with self._client.stream(method, path, **kwargs) as upstream:
+                body = bytearray()
+                async for chunk in upstream.aiter_bytes():
+                    body.extend(chunk)
+                    if len(body) > 2_000_000:
+                        raise HTTPException(status_code=502, detail="output contract limit exceeded")
+                response = httpx.Response(upstream.status_code, content=bytes(body), request=upstream.request)
         except httpx.HTTPError as exc:
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
@@ -72,7 +84,10 @@ class ControlPlaneClient:
             )
         try:
             data = strict_json_object(response.content)
-            return TaskRecord.model_validate(data).model_dump(mode="json")
+            record = TaskRecord.model_validate(data)
+            if record.request.device.bridge_id != self._bridge_id or record.request.device.id not in self._device_ids:
+                raise HTTPException(status_code=403, detail="task belongs to a different private Skill")
+            return record.model_dump(mode="json")
         except (ValueError, TypeError) as exc:
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
