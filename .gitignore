@@ -1,0 +1,25 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+.env
+*.log
+*.sqlite3
+artifacts/
+models/
+.DS_Store
+.idea/
+.vscode/
+build/
+dist/
+*.egg-info/
+
+# Private Skill credentials and local device mappings
+skill/config.local.yaml
+skill/config.local.yml
+*.local.yaml
+*.local.yml
