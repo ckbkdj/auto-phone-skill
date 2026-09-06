@@ -11,6 +11,7 @@ from lobster_phone_agent.bridge.protocol import ALLOWED_RPC_METHODS
 from lobster_phone_agent.bridge.contracts import validate_rpc_params, validate_rpc_result
 from lobster_phone_agent.errors import BridgeProtocolError
 from lobster_phone_agent.skill.pool import LocalAppiumPool
+from lobster_phone_agent.skill.atomic import AtomicDispatcher, OperationJournal
 
 _MUTATING_METHODS = frozenset(
     {
@@ -30,6 +31,7 @@ class SkillRpcDispatcher:
 
     def __init__(self, pool: LocalAppiumPool) -> None:
         self.pool = pool
+        self._atomic = None
         self._operation_results: OrderedDict[
             tuple[str, str, str], tuple[str, Any]
         ] = OrderedDict()
@@ -42,6 +44,11 @@ class SkillRpcDispatcher:
         if method not in ALLOWED_RPC_METHODS:
             raise BridgeProtocolError(f"RPC method is not allowlisted: {method}")
         params = validate_rpc_params(method, params)
+
+        if method == "atomic_action":
+            if self._atomic is None:
+                self._atomic = AtomicDispatcher(self.pool, OperationJournal(self.pool.settings.operation_journal_path))
+            return await self._atomic.dispatch(device_id, params)
 
         operation_id = str(params.get("operation_id") or "")
         if method not in _MUTATING_METHODS:
