@@ -171,24 +171,6 @@ class TaskService:
             async with self.pool.lease(descriptor) as device:
                 snapshot = await device.snapshot()
                 installed_apps = await device.list_apps()
-                plan = await self.planner.plan(
-                    record.request,
-                    snapshot=snapshot,
-                    installed_apps=installed_apps,
-                )
-                await self.store.mutate(task_id, lambda item: self._set_plan(item, plan))
-                await self.store.emit(
-                    task_id,
-                    EventType.PLAN_READY,
-                    message=f"{plan.planner} plan ready",
-                    data={
-                        "planner": plan.planner,
-                        "steps": len(plan.steps),
-                        "target_app": plan.target_app,
-                        "target_package": plan.target_package,
-                        "cache_hit": bool(plan.metadata.get("cache_hit")),
-                    },
-                )
 
                 hooks = ExecutionHooks(
                     emit=lambda event_type, message, data: self.store.emit(
@@ -202,12 +184,43 @@ class TaskService:
                     set_step_index=lambda index: self._set_step_index(task_id, index),
                     is_cancelled=lambda: task_id in self._cancelled,
                 )
-                result = await self.executor.execute(
-                    request=record.request,
-                    plan=plan,
-                    device=device,
-                    hooks=hooks,
-                )
+                if hasattr(self.executor, "execute_live"):
+                    async def on_decision(plan):
+                        await self.store.mutate(task_id, lambda item: self._set_plan(item, plan))
+                        await self.store.emit(
+                            task_id, EventType.PLAN_READY, message="single action ready",
+                            data={"mode": "single_step", "steps": 1, "round": plan.metadata["round"]},
+                        )
+                    result = await self.executor.execute_live(
+                        request=record.request, device=device, hooks=hooks,
+                        snapshot=snapshot, installed_apps=installed_apps, on_decision=on_decision,
+                    )
+                else:
+                    plan = await self.planner.plan(
+                        record.request,
+                        snapshot=snapshot,
+                        installed_apps=installed_apps,
+                    )
+                    await self.store.mutate(task_id, lambda item: self._set_plan(item, plan))
+                    await self.store.emit(
+                        task_id,
+                        EventType.PLAN_READY,
+                        message=f"{plan.planner} plan ready",
+                        data={
+                            "planner": plan.planner,
+                            "steps": len(plan.steps),
+                            "target_app": plan.target_app,
+                            "target_package": plan.target_package,
+                            "cache_hit": bool(plan.metadata.get("cache_hit")),
+                        },
+                    )
+    
+                    result = await self.executor.execute(
+                        request=record.request,
+                        plan=plan,
+                        device=device,
+                        hooks=hooks,
+                    )
                 await self.store.mutate(
                     task_id,
                     lambda item: self._set_terminal(
