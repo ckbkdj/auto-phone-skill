@@ -87,7 +87,7 @@ def _execute_open_app(client: TestClient, websocket, *, performed: bool) -> dict
 
     def request_task() -> None:
         response = client.post(
-            "/v1/execute?wait_seconds=4",
+            "/v1/execute?wait_seconds=0.2",
             headers=AUTH,
             json={
                 "instruction": "打开美团",
@@ -102,7 +102,7 @@ def _execute_open_app(client: TestClient, websocket, *, performed: bool) -> dict
     foreground = "com.android.launcher"
     # Success: initial snapshot, list apps, pre-action snapshot, launch, two stable snapshots.
     # Failure: initial snapshot, list apps, then two pre-action snapshot/launch attempts.
-    for _ in range(6):
+    for _ in range(5 if performed else 3):
         request = websocket.receive_json()
         assert request["type"] == "rpc_request"
         method = request["method"]
@@ -113,10 +113,11 @@ def _execute_open_app(client: TestClient, websocket, *, performed: bool) -> dict
             websocket.send_json(
                 rpc_result(request, [{"package": "com.sankuai.meituan", "name": "美团"}])
             )
-        elif method == "launch_app":
+        elif method == "atomic_action":
+            assert request["params"]["action"]["kind"] == "launch_app"
             if performed:
                 foreground = "com.sankuai.meituan"
-            websocket.send_json(rpc_result(request, {"performed": performed}))
+            websocket.send_json(rpc_result(request, {"state": "executed" if performed else "unknown", "code": "ok" if performed else "execution_uncertain"}))
         else:
             raise AssertionError(method)
     thread.join(timeout=5)
@@ -145,8 +146,8 @@ def test_performed_false_never_becomes_false_success(tmp_path: Path) -> None:
             websocket.send_json(hello())
             websocket.receive_json()
             result = _execute_open_app(client, websocket, performed=False)
-            assert result["status"] == "failed"
-            assert "did not perform launch_app" in result["error"]
+            assert result["status"] == "waiting_handoff"
+            assert result["confirmation"]["code"] == "outcome_unknown"
 
 
 class FalseHub:
