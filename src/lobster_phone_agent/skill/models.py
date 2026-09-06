@@ -14,6 +14,8 @@ class SkillRuntimeConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    operation_journal_path: Path = Path("artifacts/private-operations.sqlite3")
+
     appium_wait_for_idle_timeout_ms: int = Field(default=500, ge=0, le=10_000)
     appium_wait_for_selector_timeout_ms: int = Field(default=1500, ge=0, le=30_000)
     appium_enable_multi_windows: bool = False
