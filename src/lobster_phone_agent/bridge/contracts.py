@@ -16,6 +16,8 @@ from lobster_phone_agent.contracts import (
 )
 from lobster_phone_agent.errors import BridgeProtocolError
 
+from lobster_phone_agent.stepwise.models import AtomicRequest, AtomicResult
+
 Coordinate = Annotated[StrictInt, Field(ge=-100_000, le=100_000)]
 Pixel = Annotated[StrictInt, Field(ge=0, le=100_000)]
 Bounds = tuple[Coordinate, Coordinate, Coordinate, Coordinate]
@@ -133,12 +135,14 @@ class InstalledApp(ContractModel):
 
 
 PARAM_MODELS = {
+    "atomic_action": AtomicRequest,
     "snapshot": EmptyParams, "launch_app": LaunchParams, "tap": TapParams,
     "type_text": TypeParams, "clear_active": ClearParams, "swipe": SwipeParams,
     "back": MutationParams, "home": MutationParams, "list_apps": EmptyParams,
     "screenshot_png": EmptyParams, "is_alive": EmptyParams, "close": EmptyParams,
 }
 RESULT_ADAPTERS = {
+    "atomic_action": TypeAdapter(AtomicResult),
     "snapshot": TypeAdapter(SnapshotResult),
     "list_apps": TypeAdapter(Annotated[list[InstalledApp], Field(max_length=3000)]),
     "screenshot_png": TypeAdapter(Annotated[StrictStr, Field(max_length=1_800_000)]),
@@ -157,7 +161,7 @@ def validate_rpc_params(method: str, params: Any) -> dict[str, Any]:
     if issubclass(model, MutationParams) and isinstance(params, dict) and "operation_id" not in params:
         raise BridgeProtocolError(f"mutating RPC {method} requires operation_id")
     try:
-        return model.model_validate(params).model_dump(mode="json", exclude_none=True)
+        return model.model_validate(params).model_dump(mode="json", exclude_none=model is not AtomicRequest)
     except (ValidationError, TypeError, ValueError) as exc:
         # Never put raw text, selectors, tokens or endpoints into a public error.
         raise BridgeProtocolError(f"invalid RPC parameters for {method}") from exc
