@@ -132,13 +132,39 @@ class InstalledApp(ContractModel):
         return self
 
 
+class GuardedParams(ContractModel):
+    fingerprint: StrictStr = Field(min_length=1, max_length=128)
+    method: Literal["launch_app", "tap", "type_text", "clear_active", "swipe", "back", "home"]
+    params: dict[StrictStr, Any]
+
+    @model_validator(mode="after")
+    def validate_method(self):
+        self.params = validate_rpc_params(self.method, self.params)
+        return self
+
+
+class GuardedResult(ContractModel):
+    state: Literal["executed", "not_executed", "unknown"]
+    code: Literal["ok", "stale_screen", "invalid_target", "protected_surface", "outcome_unknown", "reconciled_no_effect"]
+
+    @model_validator(mode="after")
+    def consistent(self):
+        allowed = {"executed": {"ok"}, "unknown": {"outcome_unknown"},
+                   "not_executed": {"stale_screen", "invalid_target", "protected_surface", "reconciled_no_effect"}}
+        if self.code not in allowed[self.state]:
+            raise ValueError("inconsistent guarded result")
+        return self
+
+
 PARAM_MODELS = {
+    "guarded_action": GuardedParams,
     "snapshot": EmptyParams, "launch_app": LaunchParams, "tap": TapParams,
     "type_text": TypeParams, "clear_active": ClearParams, "swipe": SwipeParams,
     "back": MutationParams, "home": MutationParams, "list_apps": EmptyParams,
     "screenshot_png": EmptyParams, "is_alive": EmptyParams, "close": EmptyParams,
 }
 RESULT_ADAPTERS = {
+    "guarded_action": TypeAdapter(GuardedResult),
     "snapshot": TypeAdapter(SnapshotResult),
     "list_apps": TypeAdapter(Annotated[list[InstalledApp], Field(max_length=3000)]),
     "screenshot_png": TypeAdapter(Annotated[StrictStr, Field(max_length=1_800_000)]),
