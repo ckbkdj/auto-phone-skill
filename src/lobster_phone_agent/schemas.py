@@ -438,3 +438,4 @@ class SkillHealthResponse(ContractModel):
     bridge_connected: StrictBool
     bridge_id: StrictStr
     devices: list[StrictStr]
+    scope: Literal["loopback-only"] = "loopback-only"
