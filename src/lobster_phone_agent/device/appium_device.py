@@ -40,6 +40,8 @@ class AppiumDevice:
         self._driver = driver
         self._settings = settings
         self._command_lock = asyncio.Lock()
+        self._quarantined = False
+        self._inflight: asyncio.Task | None = None
 
     @staticmethod
     def build_capabilities(
@@ -127,13 +129,21 @@ class AppiumDevice:
     async def _run(self, callback, *, timeout: float | None = None):
         command_timeout = timeout or self._settings.appium_command_timeout_seconds
         async with self._command_lock:
+            if self._quarantined:
+                raise ExecutionError("Appium session quarantined after an uncertain command; reconcile manually")
+            pending = asyncio.create_task(asyncio.to_thread(callback))
+            self._inflight = pending
+            def consume(task):
+                if not task.cancelled():
+                    task.exception()  # Retrieve late failures without replaying the operation.
+            pending.add_done_callback(consume)
             try:
-                return await asyncio.wait_for(
-                    asyncio.to_thread(callback),
-                    timeout=command_timeout,
-                )
-            except TimeoutError as exc:
-                raise ExecutionError("Appium command timed out") from exc
+                return await asyncio.wait_for(asyncio.shield(pending), timeout=command_timeout)
+            except (TimeoutError, asyncio.CancelledError) as exc:
+                self._quarantined = True
+                if isinstance(exc, asyncio.CancelledError):
+                    raise
+                raise ExecutionError("Appium command outcome unknown; session quarantined") from exc
 
     async def snapshot(self) -> ScreenSnapshot:
         def _capture() -> tuple[str, str, str, tuple[int, int]]:
@@ -249,10 +259,10 @@ class AppiumDevice:
     def _find_element_sync(self, element: dict[str, Any] | None) -> Any | None:
         if not element:
             return None
-        try:
-            from appium.webdriver.common.appiumby import AppiumBy
-        except ModuleNotFoundError:
-            return None
+        class AppiumBy:
+            ID = "id"
+            ACCESSIBILITY_ID = "accessibility id"
+            ANDROID_UIAUTOMATOR = "-android uiautomator"
         locators: list[tuple[str, str]] = []
         resource_id = str(element.get("resource_id") or "")
         accessibility_id = str(element.get("accessibility_id") or "")
@@ -268,7 +278,19 @@ class AppiumDevice:
             )
         for by, value in locators:
             try:
-                return self._driver.find_element(by, value)
+                candidates = getattr(self._driver, "find_elements", None)
+                items = candidates(by, value) if candidates else [self._driver.find_element(by, value)]
+                bounds = element.get("bounds")
+                if bounds:
+                    matches = []
+                    for candidate in items:
+                        rect = candidate.rect
+                        actual = (rect["x"], rect["y"], rect["x"] + rect["width"], rect["y"] + rect["height"])
+                        if tuple(bounds) == actual:
+                            matches.append(candidate)
+                    items = matches
+                if len(items) == 1:
+                    return items[0]
             except Exception:
                 continue
         return None
@@ -286,7 +308,11 @@ class AppiumDevice:
         def _type() -> None:
             target = self._find_element_sync(element)
             if target is None:
+                if element:
+                    raise ExecutionError("specified input element no longer exists")
                 target = self._driver.switch_to.active_element
+            if target.get_attribute("password") in {True, "true"}:
+                raise ExecutionError("password fields require human control")
             try:
                 target.click()
             except Exception:
@@ -300,7 +326,7 @@ class AppiumDevice:
                 try:
                     target.clear()
                 except Exception as exc:
-                    failures.append(f"clear={exc}")
+                    raise ExecutionError("cannot safely clear input before replacement") from exc
 
             # replaceElementValue is a replacement API, so it is only valid for clear-first
             # semantics. Using it for append input silently overwrote existing text.
@@ -327,6 +353,8 @@ class AppiumDevice:
             except Exception as exc:
                 failures.append(f"send_keys={exc}")
 
+            if not clear:
+                raise ExecutionError("append result uncertain; no automatic append retry")
             clear_for_retry()
             try:
                 self._driver.execute_script("mobile: type", {"text": text})
@@ -334,7 +362,7 @@ class AppiumDevice:
                     target,
                     text,
                     exact=clear,
-                    allow_unreadable=True,
+                    allow_unreadable=False,
                 ):
                     return
                 failures.append("mobile:type=verification failed")
@@ -395,9 +423,13 @@ class AppiumDevice:
         del operation_id
 
         def _clear() -> None:
-            target = self._find_element_sync(element) or self._driver.switch_to.active_element
+            target = self._find_element_sync(element)
+            if target is None:
+                if element:
+                    raise ExecutionError("specified input element no longer exists")
+                target = self._driver.switch_to.active_element
             target.clear()
-            if not self._element_empty(target, allow_unreadable=True):
+            if not self._element_empty(target, allow_unreadable=False):
                 raise ExecutionError("clear command was not verified")
 
         await self._run(_clear)
@@ -471,6 +503,8 @@ class AppiumDevice:
         return bytes(await self._run(self._driver.get_screenshot_as_png))
 
     async def is_alive(self) -> bool:
+        if self._quarantined:
+            raise ExecutionError("quarantined Appium session must not be auto-recreated")
         try:
             session_id = await self._run(lambda: self._driver.session_id, timeout=3.0)
             await self._run(self._driver.get_window_size, timeout=3.0)
