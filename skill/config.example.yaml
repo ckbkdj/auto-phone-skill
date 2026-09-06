@@ -1,0 +1,48 @@
+# PRIVATE FILE: keep only on the Lobster/Appium host; chmod 600.
+server_url: https://phone.example.com
+allow_insecure_http: false
+bridge_id: lobster-home
+bridge_token: replace-with-private-wss-token-32chars
+api_token: replace-with-public-api-token-32chars
+
+# Lobster/OpenClaw talks only to this loopback listener.
+local_host: 127.0.0.1
+local_port: 8790
+local_token: replace-with-local-skill-token-32chars
+
+reconnect_min_seconds: 0.5
+reconnect_max_seconds: 15
+
+runtime:
+  appium_wait_for_idle_timeout_ms: 500
+  appium_wait_for_selector_timeout_ms: 1500
+  appium_enable_multi_windows: false
+  appium_command_timeout_seconds: 20
+  appium_session_ttl_seconds: 1800
+  reaper_interval_seconds: 60
+  bridge_max_message_bytes: 2000000
+  operation_cache_entries: 4096
+  installed_apps_cache_seconds: 300
+
+devices:
+  - id: cloud-1
+    appium_url: http://127.0.0.1:4723
+    udid: emulator-5554
+    system_port: 8201
+    metadata:
+      name: 主云手机
+      region: cn
+      provider: local
+      android_version: "16"
+
+  # Same Appium server: every phone MUST have a different explicit system_port.
+  # - id: cloud-2
+  #   appium_url: http://127.0.0.1:4723
+  #   udid: emulator-5556
+  #   system_port: 8202
+
+  # Private-LAN Appium example. Never expose it to the public Internet.
+  # - id: cloud-3
+  #   appium_url: http://10.0.0.8:4723
+  #   udid: 10.0.0.9:5555
+  #   system_port: 8203
