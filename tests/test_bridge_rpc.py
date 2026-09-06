@@ -100,9 +100,9 @@ def _execute_open_app(client: TestClient, websocket, *, performed: bool) -> dict
     thread = threading.Thread(target=request_task, daemon=True)
     thread.start()
     foreground = "com.android.launcher"
-    # Success includes an additional fresh observation before certifying finish.
-    # A negative mutation receipt stops after the first launch; no blind retry.
-    for _ in range(7 if performed else 4):
+    # Single-step: observe + app catalog + pre-dispatch validation + launch,
+    # then stable observation and one fresh completion decision (no queued finish).
+    for _ in range(8 if performed else 4):
         request = websocket.receive_json()
         assert request["type"] == "rpc_request"
         method = request["method"]
@@ -113,10 +113,11 @@ def _execute_open_app(client: TestClient, websocket, *, performed: bool) -> dict
             websocket.send_json(
                 rpc_result(request, [{"package": "com.sankuai.meituan", "name": "美团"}])
             )
-        elif method == "launch_app":
+        elif method == "guarded_action":
+            assert request["params"]["method"] == "launch_app"
             if performed:
                 foreground = "com.sankuai.meituan"
-            websocket.send_json(rpc_result(request, {"performed": performed}))
+            websocket.send_json(rpc_result(request, {"state": "executed" if performed else "unknown", "code": "ok" if performed else "outcome_unknown"}))
         else:
             raise AssertionError(method)
     thread.join(timeout=5)
