@@ -150,6 +150,11 @@ def create_router(
     async def action_plan_schema() -> dict[str, object]:
         return ActionPlan.model_json_schema()
 
+    @router.get("/v1/contracts/next-decision", dependencies=protected)
+    async def next_decision_schema() -> dict[str, object]:
+        from lobster_phone_agent.stepwise.models import Decision
+        return Decision.model_json_schema()
+
     return router
 
 
