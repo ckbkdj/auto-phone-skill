@@ -10,6 +10,7 @@ from lobster_phone_agent.agent.dialogs import CommonDialogHandler
 from lobster_phone_agent.agent.executor import ActionExecutor
 from lobster_phone_agent.agent.risk import RiskEngine
 from lobster_phone_agent.agent.service import TaskService
+from lobster_phone_agent.stepwise.runtime import StepwiseTaskService
 from lobster_phone_agent.agent.store import InMemoryTaskStore
 from lobster_phone_agent.api.auth import make_auth_dependency
 from lobster_phone_agent.api.routes import create_router, install_error_handlers
@@ -52,7 +53,7 @@ def build_service(
         planner=planner,
         vision_grounder=vision_grounder,
     )
-    service = TaskService(
+    service = StepwiseTaskService(
         settings=settings,
         store=store,
         pool=pool,
