@@ -10,7 +10,7 @@ import uuid
 from .contracts import COMMANDS, DECISION, Fault, dumps, loads, result, validate
 from .phone import Phone, conditions_met, find_node, node_risk, public_screen
 
-TERMINAL = {'succeeded', 'failed', 'cancelled'}
+TERMINAL = {'succeeded', 'failed', 'cancelled', 'initialization_failed'}
 WAITING = {'waiting_handoff', 'outcome_unknown'}
 
 
@@ -41,6 +41,20 @@ class Store:
         task['updated'] = time.time()
         self.db.execute('UPDATE tasks SET body=? WHERE id=?', (dumps(task), task['id']))
 
+    def effect_free(self, task):
+        return (task.get('steps', 0) == 0 and not task.get('receipts')
+                and self.db.execute('SELECT 1 FROM operations WHERE task=? LIMIT 1', (task['id'],)).fetchone() is None)
+
+    def reclaim_initializations(self, device_id):
+        # Called only with the selected device lock. No observed/actionable task is reclaimed.
+        with self.db:
+            for (body,) in self.db.execute('SELECT body FROM tasks').fetchall():
+                task = loads(body, 2097152)
+                if (task['request']['device_id'] == device_id and task['status'] == 'active'
+                        and task.get('observation') is None and self.effect_free(task)):
+                    task['status'], task['init_error'] = 'initialization_failed', 'INITIALIZATION_INTERRUPTED'
+                    self.save(task)
+
     def new(self, request, identity):
         with self.db:
             row = self.db.execute('SELECT body FROM tasks WHERE idem=?', (request['idempotency_key'],)).fetchone()
@@ -49,11 +63,16 @@ class Store:
                 task = loads(row[0], 2097152)
                 if task['request_digest'] != digest or task['identity'] != identity:
                     raise Fault('IDEMPOTENCY_CONFLICT')
+                if task['status'] == 'initialization_failed':
+                    for (body,) in self.db.execute('SELECT body FROM tasks WHERE id<>?', (task['id'],)):
+                        other = loads(body, 2097152)
+                        if (other['identity'] == identity or other['request']['device_id'] == request['device_id']) and other['status'] not in TERMINAL:
+                            raise Fault('DEVICE_HAS_ACTIVE_TASK')
                 return task, False
             # One unfinished owner for each private physical phone; no queued task cross-clicks.
             for (body,) in self.db.execute('SELECT body FROM tasks'):
                 existing = loads(body, 2097152)
-                if existing['identity'] == identity and existing['status'] not in TERMINAL:
+                if (existing['identity'] == identity or existing['request']['device_id'] == request['device_id']) and existing['status'] not in TERMINAL:
                     raise Fault('DEVICE_HAS_ACTIVE_TASK')
             task = {'id': uuid.uuid4().hex, 'request': request, 'request_digest': digest,
                     'identity': identity, 'status': 'active', 'observation': None,
@@ -99,13 +118,16 @@ class Store:
                     self.db.execute('DELETE FROM tasks WHERE id=?', (task_id,))
 
 
-def view(task, *, code='OK', ok=True):
+def view(task, *, code='OK', ok=True, include_observation=True):
     fields = {'task_id': task['id'], 'status': task['status'],
               'goal': task['request']['goal'], 'receipts': task['receipts'][-3:]}
-    if task['observation']:
+    if task['observation'] and include_observation:
         fields['observation'] = public_screen(task['observation'])
     if task['gate']:
         fields['gate'] = {k: task['gate'][k] for k in ('token', 'kind', 'message', 'expires_at')}
+    if not ok:
+        from .environment import hint
+        fields['hint'] = hint(code)
     return result(code=code, ok=ok, **fields)
 
 
@@ -134,7 +156,20 @@ class Runtime:
             payload = loads(dumps(payload))
             validate(COMMANDS[command], payload)
             if command == 'doctor':
-                return result(report=self.config.doctor())
+                report = self.config.doctor()
+                return result(code='SETUP_REQUIRED' if report['issues'] else 'OK', report=report)
+            if command == 'setup_status':
+                from .environment import setup_status
+                return result(setup=setup_status(self.config))
+            if command == 'tasks':
+                rows = self.store.db.execute('SELECT body FROM tasks ORDER BY rowid DESC LIMIT 16').fetchall()
+                return result(tasks=[{'task_id': t['id'], 'device_id': t['request']['device_id'],
+                    'status': t['status'], 'steps': t['steps']} for (body,) in rows
+                    for t in [loads(body, 2097152)]])
+            if command == 'prepare':
+                from .environment import prepare, setup_status
+                prepare(self.config, payload['device_id'])
+                return result(setup=setup_status(self.config))
             if command == 'begin':
                 if not payload['goal'].strip():
                     raise Fault('EMPTY_GOAL')
@@ -144,7 +179,8 @@ class Runtime:
             with self.config.lock(device_id):
                 return self._call_locked(command, payload, device_id)
         except Fault as exc:
-            return result(ok=False, code=exc.code)
+            from .environment import hint
+            return result(ok=False, code=exc.code, hint=hint(exc.code))
         except Exception:
             # Never disclose Appium responses, model keys, stack traces, or endpoints.
             return result(ok=False, code='INTERNAL_ERROR')
@@ -152,14 +188,23 @@ class Runtime:
     def _call_locked(self, command, payload, device_id):
         identity = self.config.identity(device_id)
         if command == 'begin':
+            self.store.reclaim_initializations(device_id)
             task, created = self.store.new(payload, identity)
-            if not created:
+            if not created and not (task['status'] == 'initialization_failed' and self.store.effect_free(task)):
                 return view(task, code='IDEMPOTENT_REPLAY')
+            task['status'] = 'active'
+            task.pop('init_error', None)
+            with self.store.db:
+                self.store.save(task)
             try:
                 phone = self.phone_factory(self.config, device_id, self.store)
                 task['observation'] = phone.observe()
-            except Fault as exc:
-                return view(task, code=exc.code, ok=False)
+            except Exception as exc:
+                code = exc.code if isinstance(exc, Fault) else 'INITIALIZATION_FAILED'
+                task['status'], task['init_error'] = 'initialization_failed', code
+                with self.store.db:
+                    self.store.save(task)
+                return view(task, code=code, ok=False)
             with self.store.db:
                 self.store.save(task)
             return view(task)
@@ -172,9 +217,9 @@ class Runtime:
             with self.store.db:
                 self.store.save(task)
         if command == 'status':
-            return view(task)
+            return view(task, include_observation=False)
         if command == 'cancel':
-            if task['status'] in TERMINAL:
+            if task['status'] in TERMINAL - {'initialization_failed'}:
                 return view(task)
             if task['status'] == 'outcome_unknown':
                 return view(task, code='RECONCILE_REQUIRED', ok=False)

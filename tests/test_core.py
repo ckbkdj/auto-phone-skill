@@ -335,7 +335,7 @@ class Protocol(unittest.TestCase):
         lines = [loads(x) for x in output.getvalue().splitlines()]
         self.assertEqual(len(lines), 3)
         self.assertEqual(lines[0]['result']['protocolVersion'], '2025-11-25')
-        self.assertEqual(len(lines[1]['result']['tools']), 7)
+        self.assertEqual(len(lines[1]['result']['tools']), len(COMMANDS))
         self.assertEqual(lines[2]['result']['structuredContent']['code'], 'OK')
 
     def test_mcp_parse_error_and_oversize(self):

@@ -10,12 +10,13 @@ RUNTIME_FILES = (
     'mcp.example.json', 'install.py', 'install.cmd', 'install.sh', 'docs/USAGE.md',
     'auto_phone/__init__.py', 'auto_phone/apps.json', 'auto_phone/contracts.py',
     'auto_phone/entry.py', 'auto_phone/phone.py', 'auto_phone/platform.py',
+    'auto_phone/environment.py', 'auto_phone/jdk.py',
     'auto_phone/runtime.py', 'scripts/phone_agent.py', 'scripts/live_smoke.py',
     'scripts/package_zip.py',
 )
 TEST_FILES = (
     '.github/workflows/verify.yml', 'tests/test_core.py', 'tests/test_safety.py',
-    'tests/test_wire.py', 'tests/test_distribution.py',
+    'tests/test_wire.py', 'tests/test_distribution.py', 'tests/test_bootstrap.py',
 )
 
 
@@ -32,12 +33,12 @@ def build(root: Path, destination: Path) -> Path:
             continue
         names.append(name)
     destination.mkdir(parents=True, exist_ok=True)
-    target = destination / 'auto-phone-skill-0.3.0.zip'
+    target = destination / 'auto-phone-skill-0.3.1.zip'
     temporary = target.with_suffix('.zip.tmp')
     try:
         with zipfile.ZipFile(temporary, 'w', zipfile.ZIP_DEFLATED) as archive:
             for name in sorted(names):
-                info = zipfile.ZipInfo('auto-phone-skill/' + name, date_time=(2026, 9, 6, 0, 0, 0))
+                info = zipfile.ZipInfo('auto-phone-skill/' + name, date_time=(2026, 9, 7, 0, 0, 0))
                 info.compress_type = zipfile.ZIP_DEFLATED
                 info.external_attr = 0o100644 << 16
                 archive.writestr(info, (root / name).read_bytes())

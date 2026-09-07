@@ -101,7 +101,8 @@ class BootstrapSafety(unittest.TestCase):
                 nonlocal ready_calls
                 ready_calls += 1
                 return {'value': {'ready': ready_calls >= 3}}
-            with patch('auto_phone.platform.Http.call', request), \
+            with patch('auto_phone.environment.require_local', return_value=dict(os.environ)), \
+                 patch('auto_phone.platform.Http.call', request), \
                  patch('auto_phone.platform.shutil.which', return_value='/usr/local/bin/appium'), \
                  patch('auto_phone.platform.subprocess.run', return_value=SimpleNamespace(stdout=b'{"uiautomator2":{}}')) as run, \
                  patch('auto_phone.platform.subprocess.Popen') as popen:

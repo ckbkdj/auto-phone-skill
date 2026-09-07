@@ -52,6 +52,7 @@ class Distribution(unittest.TestCase):
             script = destination / 'auto-phone-skill/scripts/phone_agent.py'
             env = dict(os.environ, AUTO_PHONE_HOME=str(Path(tmp) / 'state'),
                        AUTO_PHONE_CONFIG=str(Path(tmp) / 'absent.json'))
+            Path(env['AUTO_PHONE_CONFIG']).write_text('{}')
             process = subprocess.run([sys.executable, '-I', '-S', str(script), 'doctor', '--json', '{}'],
                                      cwd=tmp, env=env, capture_output=True, timeout=15)
             self.assertEqual(process.returncode, 0, process.stdout + process.stderr)

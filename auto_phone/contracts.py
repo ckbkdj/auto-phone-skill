@@ -62,6 +62,9 @@ DECISION = {'oneOf': [obj(
 ) for action, fields in ACTION_FIELDS.items()]}
 COMMANDS = {
     'doctor': obj({}),
+    'prepare': obj({'device_id': IDENTIFIER}, ['device_id']),
+    'tasks': obj({}),
+    'setup_status': obj({}),
     'begin': obj({'goal': string(4000, minimum=1), 'device_id': IDENTIFIER,
                   'idempotency_key': IDENTIFIER, 'success': array(CONDITION, 8)},
                  ['goal', 'device_id', 'idempotency_key']),
@@ -90,15 +93,24 @@ GATE = obj({'token': string(128, minimum=16), 'message': string(1024),
             'expires_at': {'type': 'number'}, 'kind': {'enum': ['confirmation', 'handoff', 'unknown']}},
            ['token', 'message', 'expires_at', 'kind'])
 STATUS = ['active', 'needs_decision', 'waiting_confirmation', 'waiting_handoff',
-          'outcome_unknown', 'succeeded', 'cancelled', 'failed', 'executing']
-REPORT = obj({'python': string(64), 'configured_devices': array(IDENTIFIER, 128),
+          'outcome_unknown', 'succeeded', 'cancelled', 'failed', 'executing', 'initialization_failed']
+REPORT = obj({'os': string(64), 'architecture': string(32),
+              'node_version': string(64), 'npm_version': string(64),
+              'jdk_ready': {'type': 'boolean'}, 'sdk_ready': {'type': 'boolean'},
+              'local_prerequisites_ready': {'type': 'boolean'}, 'issues': array(IDENTIFIER, 12),
+              'config_source': string(32), 'config_path': string(2048),
+              'local_config_ignored': {'type': 'boolean'},
+              'python': string(64), 'configured_devices': array(IDENTIFIER, 128),
               'node_available': {'type': 'boolean'}, 'adb_available': {'type': 'boolean'},
               'java_available': {'type': 'boolean'}, 'transport': {'const': 'stdio-or-cli'},
               'runtime_dependencies': {'const': 0}},
              ['python', 'configured_devices', 'node_available', 'adb_available',
               'java_available', 'transport', 'runtime_dependencies'])
 OUTPUT = obj({'version': {'const': '1.0'}, 'ok': {'type': 'boolean'},
-              'code': IDENTIFIER, 'task_id': IDENTIFIER, 'status': {'enum': STATUS},
+              'code': IDENTIFIER, 'hint': string(500),
+              'setup': obj({'stage': IDENTIFIER, 'code': IDENTIFIER, 'updated_at': {'type': 'number'}}, ['stage','code','updated_at']),
+              'tasks': array(obj({'task_id': IDENTIFIER, 'device_id': IDENTIFIER, 'status': {'enum': STATUS}, 'steps': integer(0,10000)}, ['task_id','device_id','status','steps']), 16),
+              'task_id': IDENTIFIER, 'status': {'enum': STATUS},
               'goal': string(4000), 'observation': OBSERVATION, 'gate': GATE,
               'receipts': array(RECEIPT, 3), 'report': REPORT}, ['version', 'ok', 'code'])
 

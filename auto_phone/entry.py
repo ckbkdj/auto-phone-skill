@@ -16,7 +16,10 @@ from .runtime import Runtime
 
 SUPPORTED_PROTOCOLS = ('2025-11-25', '2025-06-18', '2024-11-05')
 DESCRIPTIONS = {
-    'doctor': 'Inspect Python and private phone configuration; no device action.',
+    'doctor': 'Report architecture, config source and ALL missing local prerequisites. No installation or phone action.',
+    'prepare': 'Prepare/check the configured Appium without creating a task; may install Appium when operator config allows it.',
+    'tasks': 'List at most 16 saved task IDs/statuses, without goals, UI, tokens or device endpoints.',
+    'setup_status': 'Read the last bootstrap stage. No retry, installation or phone action.',
     'begin': 'Start one user goal and return the current Android UI. Reuse idempotency_key for retries.',
     'observe': 'Read a fresh Android screen. Invalidates old observation IDs and pending confirmation.',
     'step': 'Execute exactly one semantic Android action bound to an observation. No coordinates or scripts.',
@@ -136,8 +139,8 @@ def mcp_server(runtime: Runtime, reader=None, writer=None):
             elif method == 'tools/list':
                 body = {'tools': [{'name': 'phone_' + name, 'description': DESCRIPTIONS[name],
                     'inputSchema': schema, 'outputSchema': OUTPUT,
-                    'annotations': {'readOnlyHint': name in {'doctor', 'status'},
-                        'destructiveHint': name in {'step', 'resume'}, 'idempotentHint': name in {'doctor', 'status'},
+                    'annotations': {'readOnlyHint': name in {'doctor', 'status', 'tasks', 'setup_status'},
+                        'destructiveHint': name in {'step', 'resume'}, 'idempotentHint': name in {'doctor', 'status', 'tasks', 'setup_status'},
                         'openWorldHint': True}}
                     for name, schema in COMMANDS.items()]}
             elif method == 'tools/call':
@@ -162,20 +165,60 @@ def mcp_server(runtime: Runtime, reader=None, writer=None):
             send({'jsonrpc': '2.0', 'id': request_id, 'error': {'code': -32603, 'message': 'Internal error'}})
 
 
-def install(root: Path, destination: Path):
+def install(root: Path, destination: Path, *, upgrade=False):
     """Copy a ZIP-extracted Skill into a global/shared skill directory, not a service."""
     target = destination.expanduser().resolve() / 'auto-phone-skill'
     if target == root.resolve():
         return target
     if root.resolve() in target.parents:
         raise Fault('INSTALL_TARGET_INSIDE_SOURCE')
-    if target.exists():
+    if target.is_symlink():
+        raise Fault('UNSAFE_INSTALL_TARGET')
+    if target.exists() and not upgrade:
         raise Fault('INSTALL_TARGET_EXISTS')
+    if target.exists() and not ((target / 'SKILL.md').is_file() and (target / 'auto_phone/runtime.py').is_file()):
+        raise Fault('UNSAFE_INSTALL_TARGET')
     target.parent.mkdir(parents=True, exist_ok=True)
-    # Never bundle local runtime state or unrelated files from the download directory.
-    shutil.copytree(root, target, ignore=shutil.ignore_patterns('.git', '__pycache__', '.pytest_cache',
-                    '.coverage', 'artifacts', 'dist', '*.pyc', '*.local.json', '.venv',
-                    '.env', 'config.json', 'state.sqlite3*', 'appium.log'))
+    from scripts.package_zip import RUNTIME_FILES, TEST_FILES
+    import tempfile
+    temporary = Path(tempfile.mkdtemp(prefix='.auto-phone-install-', dir=target.parent))
+    backup = None
+    home = Path(os.environ.get('AUTO_PHONE_HOME', str(Path.home() / '.auto-phone-skill'))).expanduser().resolve()
+    legacy = target.parent / 'auto-phone-skill-main'
+    try:
+        for name in (*RUNTIME_FILES, *TEST_FILES):
+            source = root / name
+            if not source.is_file() or source.is_symlink() or not source.resolve().is_relative_to(root.resolve()):
+                if name in RUNTIME_FILES:
+                    raise Fault('INCOMPLETE_SKILL_ARCHIVE')
+                continue
+            dest = temporary / name
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, dest)
+        if upgrade and not os.environ.get('AUTO_PHONE_CONFIG') and not (home / 'config.json').exists():
+            from .environment import write_private
+            for candidate in (target / 'config.json', legacy / 'config.json', root / 'config.json'):
+                if candidate.is_file() and not candidate.is_symlink():
+                    checked = Config(candidate)
+                    write_private(home / 'config.json', checked.raw)
+                    break
+        if target.exists():
+            backup = home / 'skill-backups' / ('auto-phone-skill-' + uuid.uuid4().hex)
+            backup.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(target), str(backup))
+        temporary.rename(target)
+        if (upgrade and legacy != target and legacy.is_dir() and not legacy.is_symlink()
+                and (legacy / 'SKILL.md').is_file() and (legacy / 'auto_phone/runtime.py').is_file()
+                and 'name: auto-phone-skill' in (legacy / 'SKILL.md').read_text(encoding='utf-8')):
+            legacy_backup = home / 'skill-backups' / ('legacy-' + uuid.uuid4().hex)
+            legacy_backup.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(legacy), str(legacy_backup))
+    except Exception:
+        if backup and backup.exists() and not target.exists():
+            shutil.move(str(backup), str(target))
+        raise
+    finally:
+        shutil.rmtree(temporary, ignore_errors=True)
     return target
 
 
@@ -187,17 +230,18 @@ def main():
     parser = argparse.ArgumentParser(description='ZIP-installed Android Skill / MCP, no Docker and no pip.')
     parser.add_argument('--config', type=Path)
     subs = parser.add_subparsers(dest='command', required=True)
-    for name in [*COMMANDS, 'run']:
+    for name in [*COMMANDS, 'run', 'setup']:
         sub = subs.add_parser(name)
         sub.add_argument('--json', help='One strict JSON object; otherwise read a single object from stdin.')
     subs.add_parser('mcp')
     subs.add_parser('contracts')
     install_parser = subs.add_parser('install')
+    install_parser.add_argument('--upgrade', action='store_true', help='Back up an existing canonical Skill outside the scan directory before replacement.')
     install_parser.add_argument('--skills-dir', type=Path, default=Path.home() / '.openclaw/skills')
     args = parser.parse_args()
     if args.command == 'install':
         try:
-            target = install(root, args.skills_dir)
+            target = install(root, args.skills_dir, upgrade=args.upgrade)
             print(dumps({'installed': str(target), 'command': [sys.executable, str(target / 'scripts/phone_agent.py'), 'mcp']}))
         except Fault as exc:
             print(dumps(result(ok=False, code=exc.code)))
@@ -214,7 +258,18 @@ def main():
             return 0
         text = args.json if args.json is not None else sys.stdin.buffer.read(MAX_INPUT + 1)
         payload = loads(text)
-        if args.command == 'run':
+        if args.command == 'setup':
+            from .environment import configure, inspect, prepare, setup_status, write_private
+            config = configure(runtime.config, payload)
+            if payload.get('install_jdk') and not inspect(config)['jdk_ready']:
+                from .jdk import install_jdk
+                install_jdk(config)
+                raw = dict(config.raw, java_home=str(config.home / 'toolchains/jdk'))
+                write_private(config.path, raw)
+                config = Config(config.path)
+            prepare(config, payload['device_id'])
+            response = result(setup=setup_status(config))
+        elif args.command == 'run':
             validate(COMMANDS['begin'], payload)
             response = autonomous(runtime, payload)
         else:
@@ -222,7 +277,10 @@ def main():
         print(dumps(response))
         return 0 if response['ok'] else 1
     except Fault as exc:
-        print(dumps(result(ok=False, code=exc.code)), file=sys.stderr if args.command == 'mcp' else sys.stdout)
+        from .environment import hint, stage
+        if runtime and args.command == 'setup':
+            stage(runtime.config, 'blocked', exc.code)
+        print(dumps(result(ok=False, code=exc.code, hint=hint(exc.code))), file=sys.stderr if args.command == 'mcp' else sys.stdout)
         return 1
     except Exception:
         print(dumps(result(ok=False, code='INTERNAL_ERROR')), file=sys.stderr if args.command == 'mcp' else sys.stdout)
