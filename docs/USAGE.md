@@ -1,83 +1,59 @@
-# 使用与接口
+# 0.3.1 使用与故障恢复
 
-## 运行方式
+## 配置优先级
 
-所有运行时 Python 文件都在 Skill 目录，依赖标准库。宿主每次调用 CLI 即启动进程；SQLite 保存任务和 Appium session ID，下一次调用会验证并复用。MCP 模式由宿主启动同一入口的 `mcp` 子命令。没有 Python HTTP listener，也不需要 systemd、Docker 或公网域名。
+`--config 文件` → `AUTO_PHONE_CONFIG` → `~/.auto-phone-skill/config.json` → Skill 根目录 config.json（兼容旧误放路径）。显式文件不存在报 CONFIG_NOT_FOUND，不隐式切到别的设备。doctor 告知 config_source/config_path/local_config_ignored。不会读取当前 shell 工作目录任意同名文件。
 
-本地 Appium 是设备驱动服务，不是额外部署的平台：已运行则复用；未运行则由 Skill 在第一次需要手机时启动，驱动安装到用户私有 `APPIUM_HOME`。没有本机服务时，可能需要 npm 联网获取驱动；不覆盖全局驱动。模型/设备环境只在主机配置中提供。
+只读 doctor 的 ok:true 表示诊断执行成功，local_prerequisites_ready 才是本地依赖检查；已有远端 Appium 不需要本机这些工具。prepare 的 appium_ready 只表示 Appium 服务可达，还不证明指定手机已连通。begin 获取成功观察后才说明手机会话已建立。
 
-`auto_install_appium:false` 禁止联网安装；`auto_start:false` 表示仅连接现有 Appium。首次依赖初始化是引导过程，不属于热路径动作延迟。宿主应允许引导命令完成，不能把短动作超时直接套到首次安装上。
+## 受信任宿主 setup
 
-## 命令
-
-`doctor`、`begin`、`observe`、`step`、`status`、`resume`、`cancel` 的运行结果始终是一个符合 `OUTPUT` 的 JSON 对象；失败 `ok:false`，仅输出结构化错误码，不输出原始上游错误。CLI `--help`、安装器输出与 `contracts` 是管理接口，不是任务响应。
-
-```bash
-python3 scripts/phone_agent.py doctor --json '{}'
-python3 scripts/phone_agent.py begin --json '{"goal":"打开系统设置","device_id":"cloud-1","idempotency_key":"my-conversation:turn-1","success":[{"kind":"package_is","value":"com.android.settings"}]}'
-```
-
-拿到 task_id 和 observation.id 后，只发一个动作：
+setup 的 JSON 必需 device_id，首次登记需 udid；可选 appium_url/system_port/java_home/android_home/install_jdk/replace_device。字段、类型和端点严格验证，拒绝额外字段和凭据 URL。覆盖已有设备路由需 replace_device:true，日常模型不能擅自选择/切换手机。该命令不在 MCP 工具列表。
 
 ```json
-{
-  "task_id": "实际任务ID",
-  "observation_id": "实际本轮观察ID",
-  "operation_id": "turn-1-action-1",
-  "decision": {
-    "action": "launch_app",
-    "package": "com.android.settings",
-    "expect": [{"kind":"package_is","value":"com.android.settings"}]
-  }
-}
+{"device_id":"cloud-1","udid":"真实已分配UDID","install_jdk":true}
 ```
 
-将上面的 JSON 通过 stdin 或 `--json` 交给 `step`。随后读取新 observation，重新决定下一动作。CLI 示例中的占位 ID 不可当作真实 ID 使用。
+执行前要有宿主的执行/网络许可。curl 等工具被策略拒绝不是改用另一工具下载的理由；不要绕过策略。安装 JDK 的授权也不等于修改系统、安装 SDK、同意额外许可或更改宿主策略。
 
-动作白名单：`launch_app(package)`、`tap(target)`、`type(target,text)`、`clear(target)`、`scroll(target,direction)`、`back`、`home`、`wait(milliseconds)`、`finish(expect)`、`handoff(message)`。
+JDK 安装只使用 Adoptium 官方资产元数据与官方 Temurin17 下载链接。选择 Linux/macOS/Windows 和 x64/aarch64 的 JDK，不是 JRE。压缩包先校验长度与 SHA-256，再安全解压，拒绝路径逃逸；验证 javac/Java 的运行架构后落盘。暂不自动安装 musl/不支持架构的发行包，也不自动下载 Android SDK 或 Node。显式 java_home/环境 JAVA_HOME 指向 JRE 或错误架构会报 JDK_REQUIRED。
 
-`target` 只引用本轮返回的 `n0` 等引用，不能指定坐标或任意 selector。`type` 使用单次替换 API，不做额外点击、不自动回退多个输入方案。禁止换行、控制键以及 Appium 会解释为 Enter 的结尾字面 `\\n`，避免输入动作夹带提交。
+配置持久保存 Java/SDK 路径并传给 Appium 子进程，不要求每轮临时 export PATH。完整 SDK 中 platform-tools/adb 的真实安装路径可用于推导 ANDROID_HOME；孤立的 /usr/bin/adb 不被直接当成完整 SDK。
 
-`expect` 支持 `text_present`、`text_absent`、`package_is`、`screen_changed`。`finish` 必须提供正向的可见成功证据，并同时满足 begin 时的 success。对裁剪过的页面不接受“没看到某文字”等于文字不存在的推断。UI 证据不能保证业务语义绝对正确，重要任务应配置更具体的目标条件。
+## 有界初始化与状态
 
-## 确认与未知结果
+prepare、setup 不创建手机任务。setup-status.json 只记录最后阶段与错误码，是快照，不保证安装进程现在仍在运行。重复执行 prepare 先检查现有 Appium；不会自动停止其他服务。首次安装 npm/JDK 仍可能耗时，宿主应按实际进程状态处理，不能反复创建 begin 代替等待。
 
-`waiting_confirmation` 返回短期 token、真实可见目标说明。用户明确批准后，重发完全相同的 step 请求，增加 confirmation_token；operation_id、decision、observation_id 都保持不变。重新 observe、页面变化、参数变化、过期都使旧批准失效。
+初始化阶段出现异常，新任务持久化为 initialization_failed，而不是 active。没有动作意图、观察或回执的旧初始化残留，会在取得设备锁后的 begin 中释放。初始化已失败且从未下发动作的同一幂等请求可以重试；已有观察/动作的任务不会自动释放。未知结果只能由用户核对后 resume，不能通过删除数据库或换请求 ID绕过。
 
-`waiting_handoff` 或 `outcome_unknown` 只接受用户完成检查之后的 `resume {task_id,token}`。恢复只重新观察，不执行旧动作。远端命令超时不代表它已取消；必须先确认手机端动作已结束。`cancel` 不会声称撤销未知的远端动作。
+```bash
+python3 scripts/phone_agent.py tasks --json '{}'
+python3 scripts/phone_agent.py status --json '{"task_id":"实际任务ID"}'
+python3 scripts/phone_agent.py setup_status --json '{}'
+```
 
-本地日志在磁盘中记录 dispatch 前后状态。若进程在动作执行期间被宿主杀死，下次调用会检测 `executing` 并进入未知结果状态，不自动重放。单机文件锁避免两个进程同时控制同一已登记手机；SQLite 使成功/未知回执跨进程保留。它不是分布式多用户服务，也不保证远端 exactly-once。
+tasks 最多16条，只包含任务ID、设备逻辑ID、状态、动作数。status 不输出旧页面；observe 明确获取新页面，会使旧 observation_id 和待确认动作失效。禁止把这两个接口当作静默重放动作。
 
-## 常见错误码
+## 操作闭环
 
-| 错误码 | 处理 |
-|---|---|
-| UNKNOWN_DEVICE / DEVICE_TARGET_REQUIRED | 由龙虾提供实际设备映射或 AUTO_PHONE_UDID；不要猜测。 |
-| NODE_NPM_REQUIRED | 本机自动启动路径缺少 Node/npm；或者连接已有云机 Appium。 |
-| ANDROID_SDK_JAVA_REQUIRED | 本机设备驱动需要 Java、Android SDK/ADB。 |
-| APPIUM_INSTALL_REQUIRED / UIAUTOMATOR2_INSTALL_REQUIRED | 自动安装被本地配置禁止；准备受信任的 Appium/驱动。 |
-| APPIUM_INSTALL_FAILED / UIAUTOMATOR2_INSTALL_FAILED | 检查用户目录写入权限、npm 出站网络与工具链版本。 |
-| APPIUM_NOT_READY | 已配置服务不可用，或远端服务未启动；begin 失败仍返回可恢复任务 ID。 |
-| DEVICE_HAS_ACTIVE_TASK / DEVICE_BUSY | 等待或处理同一设备现有任务，不并发抢占。 |
-| STALE_OBSERVATION | 调用 observe 并基于新页面再做一个决策。 |
-| SCREEN_CHANGED_REPLAN | 旧动作未下发，按返回的新 observation 决策。 |
-| AMBIGUOUS_OR_MISSING_TARGET | Android 当前元素不唯一/不存在；不猜坐标。 |
-| OUTCOME_UNKNOWN | 人工检查远端动作结果，不自动重试。 |
-| REPEATED_ACTION_BLOCKED | 同页面同动作被阻止，人工检查而不是换 operation_id 绕过。 |
-| INVALID_LLM_OUTPUT | 独立模型没返回严格单动作 JSON；没有执行该输出。 |
+begin(goal, device_id, idempotency_key, success?) → 观察 → step(task_id, observation_id, operation_id, decision) → 新观察 → 新决策。白名单动作是 launch_app、tap、type、clear、scroll、back、home、wait、finish、handoff。type 为完整替换，不接受换行、Tab或特殊控制键。目标引用来自当前观察；没有唯一 Android 元素时停止，不猜坐标。
 
-## 隐私与限制
+finish 必须有正向当前页面证据，并同时满足 begin 的 success。只进入抖音的包名不能证明“浏览三个视频”；宿主需要跟踪实际不同内容及完成数量，无法辨识则交接，不用计时器变化假装换了视频。
 
-设备 URL、UDID、模型密钥不进入公共调用参数。模型 API key 只从配置指定的环境变量读取。状态文件包含任务目标、非密码界面文字和动作相关信息，必须保持私有；不要提交到 GitHub。密码标记和可识别敏感字段被隐藏，但这不是通用个人信息脱敏系统。
+waiting_confirmation 只允许用户明确批准后，以同一 operation_id/decision/observation_id 提交 token；页面变化或新 observe 会作废旧批准。waiting_handoff/outcome_unknown 恢复只观察不重放，需先确认旧远端命令确已结束。SQLite 保留操作意图并不等于远端恰好执行一次。
 
-没有可靠 Android 可访问元素的 Canvas、自绘、某些 WebView 或验证码页面不会以猜测坐标补齐。没有旧版固定多步配方自动运行。App 别名只是辅助识别，不是成功率认证。真机检查脚本 `scripts/live_smoke.py` 仅打开系统设置，不自动叫车、消费或发消息。
+## 安装升级与宿主压缩
 
-## 官方协议参考
+`python3 install.py --upgrade` 规范目录名并把已识别旧目录备份到私有状态目录；不覆盖旧配置、不删除任务。重新加载宿主技能，避免缓存的 `{baseDir}/auto-phone-skill-main/...` 重复拼接。若宿主还读旧路径，应先修正宿主加载状态，而不是改手机代码。
 
-- OpenClaw Skills: https://docs.openclaw.ai/tools/skills
-- MCP stdio 2025-11-25: https://modelcontextprotocol.io/specification/2025-11-25/basic/transports
-- MCP tools: https://modelcontextprotocol.io/specification/2025-11-25/server/tools
-- Appium requirements: https://appium.io/docs/en/latest/quickstart/requirements/
-- UiAutomator2: https://github.com/appium/appium-uiautomator2-driver
+auto-compaction 是宿主能力。此包不能证明提高 reserveTokensFloor 能解决当前宿主版本的问题；不会自动写 openclaw.json。出现会话压缩失败，先停止新动作，再在新会话用 tasks/status 恢复已保存任务状态。首次排错限制在一次 doctor + 一次 setup/prepare + 简短错误/阶段，不循环读源码/全盘查找/搜记忆。
 
-MCP 实现限定为文档所列协议的工具子集，不宣称支持所有后续版本、Streamable HTTP、sampling 或所有通知扩展。
+## 证据边界和官方参考
+
+新测试覆盖配置优先级、初始化失败与安全回收、ARM/JDK元数据、校验与解压、故障不绕过策略、安装升级、协议和子进程。下载通过测试替身验证；没有在用户ARM云机上完成实际JDK/SDK/Appium安装与抖音业务验收。
+
+- Appium要求：https://appium.io/docs/en/latest/quickstart/requirements/
+- UiAutomator2要求：https://appium.io/docs/en/latest/quickstart/uiauto2-driver/
+- JDK官方API用法：https://github.com/adoptium/api.adoptium.net/blob/main/docs/cookbook.adoc
+- 宿主Skills：https://docs.openclaw.ai/tools/skills
+- 宿主压缩：https://docs.openclaw.ai/concepts/compaction

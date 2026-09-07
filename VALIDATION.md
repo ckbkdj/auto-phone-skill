@@ -1,32 +1,14 @@
-# 0.3.0 验证记录
+# 0.3.1 验证记录
 
-日期：2026-09-06。状态：已完成本地代码/协议/安装包测试，待目标云手机验收。
+2026-09-07。基于主线 f9b7c501 的纯 Python ZIP Skill/MCP 版本修复，未恢复 Docker 架构。
 
-## 已实际执行
+## 已执行的本地验证
 
-执行环境 Linux、Python 3.13.5。`python -m unittest discover -s tests -v`：**59 项测试通过**。失败数 0、错误数 0。测试包含多个参数子用例，59 是 unittest 报告的测试方法数，不是伪造的 App 覆盖数。
+Python 3.13：85 个 unittest 测试方法通过，无失败/错误/跳过。旧59项保留，并按有意更改的错误语义和新增工具更新断言；新增26项初始化、配置、JDK与升级回归，不把参数子用例伪装成 App覆盖数。
 
-- 严格 JSON 与动作 Schema：重复键、未知字段、非法类型、超限结构、多动作列表和模型输出拒绝。
-- 本轮 observation_id / 页面指纹绑定、唯一元素匹配、同页面同动作阻止、确认令牌与人工接管。
-- SQLite 操作日志持久化、同 ID 不同参数冲突、进程退出/回包丢失后不重放、设备独占。
-- 真实本地 HTTP 连接到 **Appium 兼容测试替身**，验证 W3C 请求、中文文本单次替换和 scrollGesture false 的正确含义。这不是真实 Appium/Android 测试。
-- 真实 CLI 子进程、跨 CLI 进程复用已记录 session、真实 MCP stdio 子进程初始化/工具调用。
-- 复制整个 Skill 安装目录，并用 `python -I -S` 运行，证明入口不依赖 pip、项目工作目录或 site-packages。
-- 自动启动 Appium 的参数、安全绑定和缺少依赖错误分支通过模拟子进程测试；未实际联网下载 Appium。
+测试范围：双层安装路径规避/规范目录升级；私有与Skill本地配置优先级；显式错误路径拒绝；配置原子写入/备份；JRE与JDK区分、SDK根目录；环境路径跨启动保留；首次失败释放任务；同键重试；旧无动作残留回收；未知动作不清除；setup无任务；策略拒绝不重试；ARM资产选择；JDK长度/SHA-256与安全解压；重复安装复用；现有HTTP、CLI、MCP、单步动作和SQLite回执测试。
 
-另外执行 Python 编译检查、生成 ZIP、ZIP 完整性检查、解压目录的独立入口检查和同一套测试。
-
-## ZIP 安装复验补充
-
-在仓库主线便携实现上保留原 55 项测试，新增 4 项发行检查：根目录 `install.py` 在其他工作目录且禁用 site-packages 时安装；打包白名单拒绝额外私人 JSON/备份/脚本；相同源码两次打包字节一致；从实际 ZIP 解压运行 doctor；缺少必要源文件时拒绝打包（部分检查属于同一测试方法）。总计 59 个测试方法全部通过，无跳过。
-
-本地再次执行 `python -m unittest discover -s tests -v`，结果为 `Ran 59 tests ... OK`。Python 运行时仍无第三方依赖；独立 JSON Schema 校验器仅用于测试。ZIP 中不包含原 Docker 部署栈。
-
-## 尚未执行，不作完成声明
-
-没有连接用户的 Android 云手机或真实账号。未完成真实 Appium/UiAutomator2、npm 安装下载、Android SDK/设备授权联调、实际 OpenClaw 宿主导入、Windows/macOS、远程 LLM、各 App 线上灰度页面测试。没有 Top 500 真实覆盖认证，没有 200–500ms 真机时延保证。
-
-MCP 实现为文档列明的 stdio lifecycle + tools 子集，经过本项目协议及子进程回归，不是所有 MCP SDK 或协议扩展的认证。GitHub CI 为 Python 3.11/3.12/3.13 配置；本记录不等于远端三环境已经全部运行完成。
+测试中的JDK下载使用可校验的合成压缩包，不是实际下载或实际CPU执行认证。Appium HTTP测试仍是协议替身，不是真手机。CI配置增加Linux ARM64与x64各Python3.11/3.12/3.13，实际执行状态以对应提交的GitHub Actions为准。
 
 ## 可复现
 
@@ -37,8 +19,10 @@ python3 -I -S scripts/phone_agent.py doctor --json '{}'
 python3 scripts/package_zip.py
 ```
 
-设备映射已配置且有可访问真实 Appium 后，执行 `python3 scripts/live_smoke.py`。该检查只打开系统设置并验证包名，不提交叫车、订单、付款、消息或授权，不自动越过确认。
+ZIP重新解压后的独立入口与全量测试也应通过，打包按白名单排除用户配置、任务DB、日志及其他临时文件。doctor诊断成功不表示当前环境已准备好手机；请检查issues或使用prepare。
 
-## 发布边界
+## 未验证/不能据此声明
 
-本次把新架构源码与安装 ZIP 交付到仓库，替代当前分支的 Docker 方案；旧版本仍在 Git 历史。没有因为本地替身测试通过就创建“真机全通过”的 Release 证明。使用者应先用测试手机验收再用于实际业务。
+没有连接用户真实ARM云手机、Java/SDK、Appium服务或抖音账户。没有实际完成三个视频、Top500、真机时延认证；宿主auto-compaction错误没有被这个仓库修复。本次修改使故障正确分层、初始化可恢复和诊断简短，不捏造业务执行成功。
+
+不创建声称真机已通过的正式Release/tag。发布源代码与可安装ZIP供目标环境验收；旧任务数据库和不确定动作必须保留。

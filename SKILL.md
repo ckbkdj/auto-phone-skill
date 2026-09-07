@@ -1,6 +1,6 @@
 ---
 name: auto-phone-skill
-description: Control a caller-selected Android phone using live Appium semantic elements. Self-starting Python Skill with an optional MCP stdio entry; no Docker or public API deployment.
+description: Observe and control a host-assigned Android phone one action at a time. Self-starting ZIP Skill and MCP stdio with bounded setup diagnostics; no Docker or public gateway.
 user-invocable: true
 metadata:
   openclaw:
@@ -8,48 +8,38 @@ metadata:
       anyBins: [python3, python]
 ---
 
-# Auto Phone Skill
+# Auto Phone Skill 0.3.1
 
-Use the Python interpreter available on the host (Python 3.11 or newer). All Python code is included in this directory; do not run pip, Docker, git pull, or a separate HTTP gateway.
+The entry is `python3 {baseDir}/scripts/phone_agent.py` (Python 3.11+; Windows: `py -3`). `{baseDir}` is the directory containing **this actual loaded SKILL.md**. Never append `auto-phone-skill-main` or another copy of the directory name. No pip, Docker, Git pull, HTTP gateway or public port is needed. Run on the host/node that can reach the assigned phone.
 
-Entry: `python3 {baseDir}/scripts/phone_agent.py`. On Windows use `py -3` or the configured Python executable. Run with the host/node that can reach the assigned phone, not an unrelated sandbox.
+## Setup: bounded commands, not an investigation loop
 
-## First use
+1. Run `doctor --json '{}'` once. `ok:true` means the diagnostic ran, NOT that the phone is ready. Read `report.issues`, `config_source`, `config_path`, `architecture`, `jdk_ready`, `sdk_ready` and Node/npm versions.
+2. The host must supply its already-assigned real device ID/UDID. Do not enumerate or select another phone. For approved first-time provisioning, use the host-only `setup` command with this assignment. It writes the correct private config. `install_jdk:true` is an explicit user-home JDK-install opt-in; never download a random JRE/CPU archive yourself.
+3. For an existing configuration, run `prepare --json '{"device_id":"cloud-1"}'`. This prepares Appium without allocating a task. `appium_ready` does not yet certify the phone session.
+4. On failure, show the error and `hint`, or obtain `setup_status --json '{}'`. **Stop after one failed setup attempt.** Do not read source files, grep all directories, search memories for configuration, run sudo/apt, guess new URLs, or repeatedly call begin. A denial from exec/network policy requires administrator approval; never switch tools to bypass it.
 
-Run `doctor --json '{}'`. Device allocation belongs to Lobster/OpenClaw. An operator supplies `AUTO_PHONE_UDID` and optionally `AUTO_PHONE_DEVICE_ID` / `AUTO_PHONE_APPIUM_URL`, or the private JSON mapping described in `{baseDir}/config.example.json`. Never invent a UDID, change a device mapping, or put Appium endpoints in tool arguments.
+Private config is `~/.auto-phone-skill/config.json`; `--config` or `AUTO_PHONE_CONFIG` has priority and must exist. A config beside this Skill is read only as backward compatibility when no private config exists. Do not put credentials into model context. Operator details: `{baseDir}/docs/USAGE.md`.
 
-The runtime reuses an existing Appium. For a missing local Appium it can install into the user's private runtime directory and start a loopback-only Appium child automatically. Node/npm, Java and Android SDK are host prerequisites for that path. Do not silently install OS toolchains or require sudo. Read `{baseDir}/docs/USAGE.md` for bootstrap errors.
+## Execute one observed step
 
-## Default: use the host model, one decision per screen
+`begin` accepts goal, assigned device_id, stable idempotency_key and optional success conditions. Read the returned observation, decide exactly ONE action, and call `step` with task_id, observation_id, stable operation_id and decision. References such as `n0` are valid only for the returned observation. Do not generate future steps, coordinates, Shell, ADB, XPath or arbitrary scripts. `type` replaces the entire field; it is not append.
 
-1. Call `begin` with a goal, an assigned device_id and one stable idempotency_key for this user turn.
-2. Read the returned observation. Decide **exactly one** current action. Do not generate a workflow list or predict future controls.
-3. Call `step` with task_id, observation_id, a stable operation_id for this one action, and a decision object. Use a target ref actually present in this observation. No x/y, shell, arbitrary code, XPath or model-generated selectors are accepted.
-4. Read the new observation and the last receipt before deciding the next action. Do not reuse an old observation after another observe/step call.
-5. Use `finish` only with positive success evidence visible on the phone. A dispatched command is not proof of a successful ride, payment or order.
+After each step, inspect the new observation and receipt before deciding again. Retain the goal, task ID and at most three receipts; do not carry verbose reasoning. `finish` requires positive observable evidence. Opening an app is not evidence of completing a compound goal such as browsing three videos: track that count and actual distinct content observations, and hand off when evidence is unavailable. Do not count timer changes as new videos.
 
-Preserve the user goal and at most three compact receipts between turns. Discard speculative future steps and verbose reasoning. The full runtime contracts are printed by `contracts`; see `{baseDir}/docs/USAGE.md` for examples.
+## Recover without repeating effects
 
-```bash
-python3 {baseDir}/scripts/phone_agent.py begin --json '{"goal":"打开系统设置","device_id":"cloud-1","idempotency_key":"conversation-1:turn-1","success":[{"kind":"package_is","value":"com.android.settings"}]}'
-```
+- `initialization_failed`: no user action was dispatched; device occupancy is released. After setup is fixed, reuse the same begin request/key. Old initialization-only leftovers are reclaimed only with no observation, receipts or operation intents.
+- `waiting_confirmation`: show the gate message. Only after explicit user approval repeat the SAME step/operation_id with its confirmation_token. Never approve automatically.
+- `waiting_handoff` / `outcome_unknown`: stop mutations. User must inspect/complete the phone operation and ensure any remote command ended before `resume`. Resume only re-observes; it never repeats the action. Do not delete state.sqlite3.
+- `SCREEN_CHANGED_REPLAN`: nothing dispatched; decide from the new observation.
+- `REPEATED_ACTION_BLOCKED`: do not invent another ID to keep clicking.
+- `succeeded`: report only observed completion, not app-wide certification.
 
-All operational commands accept a single strict JSON object through `--json` or stdin. Prefer the host's argument-array/JSON facilities; never concatenate untrusted text into a shell command. Match shell quoting to the OS.
+`tasks --json '{}'` lists at most 16 task IDs/statuses without UI or goals. `status` omits the previous UI; `observe` explicitly fetches a new screen. Passwords, OTPs, CAPTCHA and biometrics stay manual.
 
-## Non-negotiable state handling
+If the host reports auto-compaction failure, do not launch a replacement phone task. In a refreshed host session recover task ID/status using `tasks` and `status` first. This Skill cannot repair the host's compaction engine or silently change its reserve-token settings.
 
-- `needs_decision`: examine the new screen and decide one next action, not a stored plan tail.
-- `waiting_confirmation`: show the exact gate message and actual target. Only after explicit user approval, repeat the **same step request and operation_id** with its confirmation_token. Never let an autonomous loop approve.
-- `waiting_handoff`: let the user complete the protected phone operation. Call `resume` with the current gate token only after the user says it is complete. Resume only observes; it never repeats the previous action.
-- `outcome_unknown`: stop all mutations. Ask the user to inspect the phone and verify the previous remote operation has ended. Never invent a new operation_id to retry it. The operator may resume with the current token after reconciliation.
-- `SCREEN_CHANGED_REPLAN`: nothing was dispatched; use the newly returned observation and reconsider.
-- `REPEATED_ACTION_BLOCKED`: do not keep clicking the same unchanged page. Request human help.
-- `succeeded`: report only the observed result. Do not claim untested App versions or an entire Top 500 catalog are certified.
+## Modes
 
-Passwords, OTPs, biometrics, CAPTCHA, security verification and sensitive input are manual. User data is local in `~/.auto-phone-skill/state.sqlite3`; do not copy it or Appium logs to public repositories.
-
-## Optional autonomous LLM / MCP
-
-`run` uses a separately configured OpenAI-compatible model, with **fresh system + current-screen messages for each single decision**. It has no expanding chat history and cannot supply confirmation/resume tokens. The default host-driven mode needs no second LLM key.
-
-MCP hosts start `python3 {baseDir}/scripts/phone_agent.py mcp` themselves. The process exposes only doctor/begin/observe/step/status/resume/cancel tools over stdin/stdout; no listening port and no daemon setup. See `{baseDir}/mcp.example.json`.
+Default mode uses the host model; no second model key. Optional `run` uses a configured LLM with fresh system + current-screen messages each round and cannot approve gates. Optional MCP: host launches `python3 {baseDir}/scripts/phone_agent.py mcp`; stdin/stdout only. Host-only setup/installation are NOT MCP tools. `contracts` prints the closed schemas only when developing an integration, not every task.

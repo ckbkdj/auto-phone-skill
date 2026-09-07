@@ -66,7 +66,7 @@ def parse_screen(source: str, package: str) -> dict:
     if not package:
         package = next((x['_locator']['package'] for x in nodes if x['_locator']['package']), '')
     return {'id': uuid.uuid4().hex, 'fingerprint': hashlib.sha256(dumps([package, fingerprint]).encode()).hexdigest(),
-            'package': package[:255], 'nodes': nodes[:160], 'omitted_nodes': max(0, len(nodes) - 160),
+            'package': package[:255], 'nodes': nodes[:80], 'omitted_nodes': max(0, len(nodes) - 80),
             '_captured': time.time()}
 
 

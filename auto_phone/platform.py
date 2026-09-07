@@ -90,6 +90,8 @@ class Http:
             with self.opener.open(request, timeout=timeout) as response:
                 raw = response.read(MAX_RESPONSE + 1)
                 return loads(raw, MAX_RESPONSE)
+        except PermissionError as exc:
+            raise Fault('HOST_EXEC_POLICY_DENIED', uncertain=mutation) from exc
         except urllib.error.HTTPError as exc:
             # HTTP rejection is not always proof a device command did not execute.
             raise Fault('UPSTREAM_REJECTED', uncertain=mutation) from exc
@@ -107,10 +109,23 @@ class Config:
         self.home.mkdir(parents=True, exist_ok=True)
         if os.name != 'nt':
             self.home.chmod(0o700)
-        path = path or Path(os.environ.get('AUTO_PHONE_CONFIG', str(self.home / 'config.json')))
-        raw = loads(path.read_bytes()) if path.exists() else {}
-        if set(raw) - {'devices', 'auto_install_appium', 'confirm_all', 'max_steps', 'llm'}:
+        local = Path(__file__).resolve().parent.parent / 'config.json'
+        explicit = path is not None or bool(os.environ.get('AUTO_PHONE_CONFIG'))
+        self.source = 'explicit' if path is not None else 'environment' if explicit else 'private'
+        path = Path(path or os.environ.get('AUTO_PHONE_CONFIG') or self.home / 'config.json').expanduser()
+        if explicit and not path.is_file():
+            raise Fault('CONFIG_NOT_FOUND')
+        if not explicit and not path.exists() and local.is_file():
+            path, self.source = local, 'skill_local_compat'
+        self.path = path.resolve()
+        self.local_config_ignored = local.is_file() and self.path != local.resolve()
+        raw = loads(self.path.read_bytes()) if self.path.exists() else {}
+        self.raw = loads(dumps(raw))
+        if set(raw) - {'devices', 'auto_install_appium', 'confirm_all', 'max_steps', 'llm', 'java_home', 'android_home'}:
             raise Fault('INVALID_CONFIG')
+        for field in ('java_home', 'android_home'):
+            if field in raw and (not isinstance(raw[field], str) or not raw[field].strip() or len(raw[field]) > 2048):
+                raise Fault('INVALID_CONFIG')
         self.auto_install = raw.get('auto_install_appium', True)
         self.confirm_all = raw.get('confirm_all', False)
         self.max_steps = raw.get('max_steps', 40)
@@ -172,7 +187,9 @@ class Config:
         return Lock(self.home / ('device-' + key + '.lock'))
 
     def doctor(self):
-        return {'python': sys.version.split()[0], 'configured_devices': sorted(self.devices),
+        from .environment import inspect
+        details = inspect(self)
+        return {**details, 'python': sys.version.split()[0], 'configured_devices': sorted(self.devices),
                 'node_available': bool(shutil.which('node')), 'adb_available': bool(shutil.which('adb')),
                 'java_available': bool(shutil.which('java')), 'transport': 'stdio-or-cli',
                 'runtime_dependencies': 0}
@@ -186,7 +203,9 @@ def ensure_appium(config: Config, device: dict) -> None:
             data = http.call('GET', '/status', timeout=2)
             value = data.get('value')
             return isinstance(value, dict) and value.get('ready') is True
-        except Fault:
+        except Fault as exc:
+            if exc.code == 'HOST_EXEC_POLICY_DENIED':
+                raise
             return False
     if healthy():
         return
@@ -198,7 +217,10 @@ def ensure_appium(config: Config, device: dict) -> None:
             return
         executable = shutil.which('appium')
         managed_main = config.home / 'node/node_modules/appium/build/lib/main.js'
-        env = dict(os.environ)
+        from .environment import require_local, stage
+        if not executable and not managed_main.exists() and not config.auto_install:
+            raise Fault('APPIUM_INSTALL_REQUIRED')
+        env = require_local(config)
         if executable:
             command = [executable]
         elif managed_main.exists() and shutil.which('node'):
@@ -211,20 +233,22 @@ def ensure_appium(config: Config, device: dict) -> None:
             if not npm or not node:
                 raise Fault('NODE_NPM_REQUIRED')
             # Android SDK/Java are host toolchains, not silently installed with root access.
-            if not shutil.which('adb') or not shutil.which('java'):
-                raise Fault('ANDROID_SDK_JAVA_REQUIRED')
             env['APPIUM_HOME'] = str(config.home / 'appium-home')
             try:
+                stage(config, 'install_appium')
                 subprocess.run([npm, 'install', '--prefix', str(config.home / 'node'),
                                 '--no-audit', '--no-fund', 'appium@3'],
-                               check=True, timeout=300, stdout=sys.stderr, stderr=sys.stderr, env=env)
+                               check=True, timeout=300, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env)
                 command = [node, str(managed_main)]
                 subprocess.run([*command, 'driver', 'install', 'uiautomator2'],
-                               check=True, timeout=300, stdout=sys.stderr, stderr=sys.stderr, env=env)
+                               check=True, timeout=300, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env)
+            except PermissionError as exc:
+                raise Fault('HOST_EXEC_POLICY_DENIED') from exc
             except (OSError, subprocess.SubprocessError) as exc:
                 raise Fault('APPIUM_INSTALL_FAILED') from exc
         # Drivers stay in a private Appium home; never alter a global driver's installation.
         env['APPIUM_HOME'] = str(config.home / 'appium-home')
+        stage(config, 'check_driver')
         try:
             listing = subprocess.run([*command, 'driver', 'list', '--installed', '--json'],
                                      check=True, capture_output=True, timeout=30, env=env)
@@ -233,10 +257,13 @@ def ensure_appium(config: Config, device: dict) -> None:
                 if not config.auto_install:
                     raise Fault('UIAUTOMATOR2_INSTALL_REQUIRED')
                 subprocess.run([*command, 'driver', 'install', 'uiautomator2'], check=True,
-                               timeout=300, stdout=sys.stderr, stderr=sys.stderr, env=env)
+                               timeout=300, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env)
+        except PermissionError as exc:
+            raise Fault('HOST_EXEC_POLICY_DENIED') from exc
         except (OSError, subprocess.SubprocessError) as exc:
             raise Fault('UIAUTOMATOR2_INSTALL_FAILED') from exc
         address = '::1' if parsed.hostname == '::1' else '127.0.0.1'
+        stage(config, 'start_appium')
         log = open(config.home / 'appium.log', 'ab')
         try:
             process = subprocess.Popen([*command, '--address', address, '--port', str(parsed.port or 80),
@@ -244,6 +271,8 @@ def ensure_appium(config: Config, device: dict) -> None:
                                        stdin=subprocess.DEVNULL, stdout=log, stderr=log, env=env,
                                        start_new_session=os.name != 'nt',
                                        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == 'nt' else 0)
+        except PermissionError as exc:
+            raise Fault('HOST_EXEC_POLICY_DENIED') from exc
         except OSError as exc:
             raise Fault('APPIUM_START_FAILED') from exc
         finally:
